@@ -1,0 +1,6 @@
+boto3
+python-dotenv
+strands-agents 
+strands-agents-tools
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
