@@ -84,6 +84,48 @@ python invoke_agent.py --prompt "Generate a newsletter for yesterday's AI announ
 
 **Check your email!** You should receive a formatted newsletter.
 
+### 7. Deploy EventBridge Automation (OPTIONAL - 2 min)
+
+Make your newsletter **fully autonomous** with daily scheduled execution:
+
+```bash
+cd backend
+python deploy_eventbridge.py
+```
+
+**What this creates:**
+- ✅ EventBridge Scheduler (runs daily at 8 AM UTC)
+- ✅ IAM role for EventBridge to invoke AgentCore
+- ✅ IAM role for AgentCore to publish to SNS
+- ✅ Updates `.env` with scheduler configuration
+
+**Expected output:**
+```
+🚀 Deploying EventBridge Scheduler: aws-newsletter
+✓ Created EventBridge role
+✓ Created AgentCore Runtime role
+✓ Created schedule
+✓ Updated .env
+✅ EVENTBRIDGE DEPLOYMENT COMPLETED SUCCESSFULLY!
+```
+
+**Custom schedules:**
+```bash
+# Run every 12 hours
+python deploy_eventbridge.py --schedule "rate(12 hours)"
+
+# Run at noon UTC daily
+python deploy_eventbridge.py --schedule "cron(0 12 * * ? *)"
+
+# Run weekdays at 9 AM UTC
+python deploy_eventbridge.py --schedule "cron(0 9 ? * MON-FRI *)"
+```
+
+**Test manual trigger:**
+```bash
+python deploy_eventbridge.py --trigger-now
+```
+
 ## Verification Commands
 
 ### Check Infrastructure Status
@@ -103,6 +145,15 @@ aws bedrock-agentcore-control get-memory \
 cd deployment
 agentcore status
 agentcore logs
+```
+
+### Check EventBridge Scheduler (if deployed)
+```bash
+cd ../backend
+python deploy_eventbridge.py --status
+
+# Or use AWS CLI
+aws scheduler get-schedule --name aws-newsletter-daily-newsletter
 ```
 
 ### Test Newsletter Generation
@@ -210,20 +261,22 @@ aws cloudwatch get-metric-statistics \
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────┐
-│              Daily Newsletter Flow                   │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│              Daily Newsletter Flow                        │
+└──────────────────────────────────────────────────────────┘
 
-  1. Trigger (manual/scheduled)
+  1. EventBridge Scheduler (8 AM UTC daily)
         ↓
-  2. AgentCore Agent (agent.py)
+  2. Triggers AgentCore Runtime
+        ↓
+  3. Agent executes (agent.py)
         ↓
         ├─► Fetch AWS News (https://aws.amazon.com/new/)
         ├─► Check Memory (avoid duplicates)
         ├─► Filter AI content
         └─► Generate newsletter
              ↓
-  3. Publish to SNS Topic
+  4. Publish to SNS Topic
         ↓
         ├─► Email Subscribers → 📧 Newsletter
         └─► SQS Queue → 📊 Delivery Tracking
@@ -273,5 +326,14 @@ After completing this guide, you should have:
 - [ ] `.env` file populated with all ARNs/IDs
 - [ ] Successfully received a test newsletter
 - [ ] Agent logs showing successful execution
+- [ ] (Optional) EventBridge Scheduler configured for daily automation
 
 **Congratulations! Your AWS Newsletter Agent is live!** 🎉
+
+### Bonus: Fully Autonomous Setup
+
+If you completed step 7 (EventBridge):
+- ✅ Newsletter runs automatically daily at 8 AM UTC
+- ✅ No manual intervention required
+- ✅ CloudWatch logs track all executions
+- ✅ Email arrives in your inbox every morning

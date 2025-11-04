@@ -1,6 +1,6 @@
 # AWS What's New Alerts
 
-Automated newsletter system that monitors AWS announcements and delivers daily email digests focused on AI/ML updates.
+Fully autonomous newsletter system that monitors AWS announcements and delivers daily email digests focused on AI/ML updates.
 
 ## Quick Start
 
@@ -19,7 +19,15 @@ cd ../deployment
 agentcore configure -e agent.py
 agentcore launch
 
-# 4. Test
+# 4. Add agent ARN to .env
+cd ..
+echo "AGENTCORE_ARN=<your-agent-arn>" >> .env
+
+# 5. Deploy EventBridge automation (OPTIONAL)
+cd backend
+python deploy_eventbridge.py
+
+# 6. Test manually
 cd ..
 python invoke_agent.py --prompt "Generate newsletter for yesterday"
 ```
@@ -28,6 +36,7 @@ python invoke_agent.py --prompt "Generate newsletter for yesterday"
 
 ## What This Does
 
+- 🤖 **Fully autonomous** - Runs daily via EventBridge Scheduler
 - 🔍 Automatically fetches latest AWS announcements
 - 🎯 Filters for AI/ML-related content (customizable)
 - 📧 Generates professional formatted newsletters
@@ -46,18 +55,23 @@ python invoke_agent.py --prompt "Generate newsletter for yesterday"
 ## Architecture
 
 ```
-Bedrock Agent → SNS Topic → Email Subscribers
-     ↑                ↓
-AWS News Feed    SQS Delivery Tracking
-     ↑
-AgentCore Memory
+EventBridge Scheduler (daily) → Bedrock AgentCore Runtime
+                                        ↓
+                                 Agent execution
+                                        ↓
+                    ┌───────────────────┼────────────────┐
+                    ↓                   ↓                ↓
+              AWS News Feed      AgentCore Memory    SNS Topic
+                    ↓                   ↓                ↓
+                 Filtering         Deduplication    Email + SQS
 ```
 
 ## Features
 
-- ✅ Daily automated newsletters
-- ✅ Content filtering by topic
-- ✅ Customizable time ranges
+- ✅ **Fully autonomous** - EventBridge triggers daily execution
+- ✅ **Zero maintenance** - Set it and forget it
+- ✅ Content filtering by topic (AI/ML focused)
+- ✅ Customizable time ranges and schedules
 - ✅ Memory-based duplicate prevention
 - ✅ Professional formatting with statistics
 - ✅ Delivery tracking and analytics
