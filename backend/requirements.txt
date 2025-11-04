@@ -10,3 +10,6 @@ constructs>=10.0.0
 click>=8.0.0
 pyyaml>=6.0
 python-dotenv>=1.0.0
+
+# AgentCore requirements (for full stack deployment)
+bedrock-agentcore-starter-toolkit>=0.1.0
