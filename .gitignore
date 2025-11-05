@@ -210,3 +210,6 @@ __marimo__/
 # Never commit development/editor-specific files
 .claude/
 CLAUDE.md
+.claude
+.bedrock_agentcore/
+coder.py

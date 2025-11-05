@@ -4,7 +4,7 @@ Creates daily email newsletters in professional format with numbered announcemen
 """
 import os
 import argparse
-from datetime import date, datetime
+from datetime import datetime
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig, RetrievalConfig
 from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
@@ -17,8 +17,8 @@ load_dotenv()
 
 # Configuration
 AWS_URL = "https://aws.amazon.com/new/"
-SNS_TOPIC_ARN = os.getenv("SNS_TOPIC_ARN")  # Your email subscription topic
-MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")  # Your memory ID
+SNS_TOPIC_ARN = os.getenv("SNS_TOPIC_ARN")
+MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
 CUTOFF_DATE = "2022-10-01"
 
 SYSTEM_PROMPT = f"""
@@ -31,7 +31,7 @@ WORKFLOW:
 2. Use http_request tool to fetch latest news from {AWS_URL}
 3. FOLLOW USER'S TIME FRAME REQUEST:
    - If user says "last week" or "7 days" → process last 7 days
-   - If user says "last month" → process last 30 days  
+   - If user says "last month" → process last 30 days
    - If user says "yesterday" → process last 24 hours
    - If user says "last 3 days" → process last 3 days
    - DEFAULT (no time specified): process last 24 hours for daily newsletter
@@ -44,12 +44,14 @@ WORKFLOW:
    - SageMaker, AI/ML services, intelligent automation
    - Computer vision, natural language processing, NLP
    - AI model training, inference, fine-tuning
-6. Check memory to avoid duplicate processing
-7. Extract AI-RELATED articles from the USER-SPECIFIED time frame with: title, summary, link, publish_date
-6. If NO new articles: Send "Nothing new today" newsletter
-7. If new articles found: Create formatted newsletter with numbered announcements
-8. Send email via publish_message tool to: {SNS_TOPIC_ARN}
-9. Store processed articles in memory with today's date
+6. Memory check: Previously processed article URLs will be available in session context
+7. Fetch articles from AWS and extract all article URLs
+8. Cross-reference: Skip any article URLs found in memory (already processed)
+9. Extract AI-RELATED articles (NEW ones only) with: title, summary, link, publish_date
+10. If NO new articles: Send "Nothing new today" newsletter
+11. If new articles found: Create formatted newsletter with numbered announcements
+12. Send email via publish_message tool to: {SNS_TOPIC_ARN}
+13. Mention the processed article URLs in your response (memory will automatically extract them)
 
 NEWSLETTER FORMAT:
 Subject: "🌟 AWS DAILY NEWSLETTER | [TODAY'S DATE] 🌟"
@@ -75,17 +77,13 @@ Today brings [X] new AWS announcements! Here's your comprehensive roundup:
 [#]. **[TITLE]** | [ANNOUNCEMENT DATE]
     🔗 [FULL BLOG POST URL]
     📋 [2-3 sentence summary focusing on AI/ML implications and why this matters for AI developers]
-    
+
 [Continue numbering for each announcement...]
 
-📊 BY THE NUMBERS TODAY
+📊 QUICK STATS
 ═══════════════════════════════════════════════════════════════
-
-🤖 [X] Total AI/ML Announcements
-🧠 [X] Bedrock/LLM Updates
-🤖 [X] Agent/Agentic AI Features
-📊 [X] SageMaker/ML Services
-🔬 [X] AI Research/Innovation
+✅ [X] New AI/ML Announcements Processed
+🔄 [X] Duplicate Articles Skipped (if any)
 
 ═══════════════════════════════════════════════════════════════
 📧 Questions? Visit aws.amazon.com
@@ -96,10 +94,12 @@ This newsletter was generated on [TODAY'S DATE]
 ═══════════════════════════════════════════════════════════════
 ```
 
-MEMORY USAGE:
-- Query yesterday's processed articles to avoid duplicates
-- Store today's articles with date stamps
-- Track categories for statistics (AI/ML, Security, etc.)
+MEMORY & DEDUPLICATION:
+- Session automatically queries /newsletter/facts for previously processed articles
+- Before creating newsletter, identify which article URLs are NEW vs ALREADY PROCESSED
+- Only include NEW articles in the newsletter
+- Explicitly mention processed article URLs in your response for future deduplication
+- Example: "Processed 3 new articles: [url1], [url2], [url3]. Skipped 5 duplicates from memory."
 
 IMPORTANT RULES:
 1. DEFAULT: Only include AI-related content (unless user asks for "all announcements")
@@ -107,64 +107,12 @@ IMPORTANT RULES:
 3. Always number announcements (1., 2., 3., etc.)
 4. Include the actual announcement date from AWS (not today's date)
 5. Include full blog post URLs for each announcement
-6. If zero AI announcements found, send "No AI news today" version
+6. If zero NEW AI announcements found (all duplicates or none), send "No new AI news" version
 7. Focus on AI/ML implications in summaries
 8. Always use the exact ASCII border style shown above
 9. DEFAULT to last 24 hours only when user doesn't specify a time frame
 10. Override AI filter only if user specifically asks for "all announcements" or broader coverage
 """
-
-# Global agent instance for lazy loading pattern
-_newsletter_agent = None
-
-def get_or_create_agent(actor_id: str, session_id: str) -> Agent:
-    """
-    Get existing agent or create new one with memory configuration.
-    Uses lazy loading pattern as recommended in AgentCore documentation.
-    """
-    global _newsletter_agent
-    
-    if _newsletter_agent is None:
-        if MEMORY_ID:
-            # Configure memory with proper retrieval configs for newsletter data
-            memory_config = AgentCoreMemoryConfig(
-                memory_id=MEMORY_ID,
-                session_id=session_id,
-                actor_id=actor_id,
-                retrieval_config={
-                    f"/newsletter/{actor_id}/processed": RetrievalConfig(
-                        top_k=50,
-                        relevance_score=0.8,
-                        initialization_query=f"What AWS articles have been processed in recent newsletters since {CUTOFF_DATE}?"
-                    ),
-                    f"/newsletter/{actor_id}/ai_patterns": RetrievalConfig(
-                        top_k=10,
-                        relevance_score=0.7
-                    )
-                }
-            )
-            
-            session_manager = AgentCoreMemorySessionManager(
-                agentcore_memory_config=memory_config,
-                region_name="us-east-1"
-            )
-            
-            _newsletter_agent = Agent(
-                system_prompt=SYSTEM_PROMPT,
-                tools=[http_request, current_time],
-                load_tools_from_directory=True,
-                session_manager=session_manager
-            )
-        else:
-            # No memory - for basic testing
-            print("⚠️  No BEDROCK_AGENTCORE_MEMORY_ID found - running without persistent memory")
-            _newsletter_agent = Agent(
-                system_prompt=SYSTEM_PROMPT,
-                tools=[http_request, current_time],
-                load_tools_from_directory=True
-            )
-    
-    return _newsletter_agent
 
 # Instantiate Bedrock AgentCore
 app = BedrockAgentCoreApp()
@@ -172,55 +120,72 @@ app = BedrockAgentCoreApp()
 @app.entrypoint
 async def invoke_agent(payload, context):
     """
-    Handler for daily newsletter generation with proper memory integration
+    Handler for daily newsletter generation with proper memory integration.
+    Creates a new agent instance per invocation (no lazy loading with memory).
     """
     if not MEMORY_ID:
         return {"error": "Memory not configured. Set BEDROCK_AGENTCORE_MEMORY_ID environment variable."}
-    
-    # Extract session and actor information (following blog post pattern)
-    actor_id = context.request_headers.get('X-Amzn-Bedrock-AgentCore-Runtime-Custom-Actor-Id', 'aws-newsletter-bot') if context.request_headers else 'aws-newsletter-bot'
-    session_id = context.session_id or f"aws-newsletter-{date.today().isoformat()}"
-    
-    # Get or create agent with proper memory configuration (lazy loading)
-    agent = get_or_create_agent(actor_id, session_id)
-    
-    prompt = payload.get("prompt")
-    
-    # Add context about available tools and today's mission
-    today = datetime.now().strftime("%B %d, %Y")
-    enhanced_prompt = f"""
-    {prompt}
-    
-    TODAY'S MISSION: Generate AWS Daily Newsletter for {today}
-    
-    AVAILABLE TOOLS:
-    - current_time: Get current date/time
-    - http_request: Fetch AWS news from {AWS_URL}
-    - publish_message: Send newsletter email (topic: {SNS_TOPIC_ARN})
-    - Memory: Track processed articles to avoid duplicates
-    
-    REQUIREMENTS:
-    1. FOLLOW THE USER'S TIME FRAME REQUEST (they said "{prompt}" - extract time period from this!)
-    2. Number each announcement (1., 2., 3., etc.)
-    3. Include announcement date and full blog URL for each
-    4. If no new announcements, send "nothing new" newsletter
-    5. Use the exact ASCII border formatting style
-    6. Categorize for statistics section
-    """
-    
-    response = agent(enhanced_prompt)
-    return response
+
+    try:
+        # Extract session and actor information
+        actor_id = context.request_headers.get(
+            'X-Amzn-Bedrock-AgentCore-Runtime-Custom-Actor-Id',
+            'aws-newsletter-bot'
+        ) if context.request_headers else 'aws-newsletter-bot'
+
+        # Use AgentCore-managed session ID
+        session_id = context.session_id
+
+        # Create agent instance with memory configuration
+        # Note: We create a new instance per invocation to ensure proper session isolation
+        memory_config = AgentCoreMemoryConfig(
+            memory_id=MEMORY_ID,
+            session_id=session_id,
+            actor_id=actor_id,
+            retrieval_config={
+                "/newsletter/facts": RetrievalConfig(
+                    top_k=50,
+                    relevance_score=0.8,
+                    initialization_query=f"What AWS articles have been processed in recent newsletters since {CUTOFF_DATE}? List all article URLs and publication dates."
+                ),
+                "/newsletter/articles": RetrievalConfig(
+                    top_k=20,
+                    relevance_score=0.7
+                )
+            }
+        )
+
+        session_manager = AgentCoreMemorySessionManager(
+            agentcore_memory_config=memory_config,
+            region_name="us-east-1"
+        )
+
+        agent = Agent(
+            system_prompt=SYSTEM_PROMPT,
+            tools=[http_request, current_time],
+            load_tools_from_directory=True,
+            session_manager=session_manager
+        )
+
+        # Pass prompt directly to agent
+        prompt = payload.get("prompt", "Generate daily AWS AI/ML newsletter for the last 24 hours")
+        response = agent(prompt)
+
+        return response
+
+    except Exception as e:
+        return {"error": f"Agent execution failed: {str(e)}"}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AWS Daily Newsletter Agent")
     parser.add_argument("--port", type=int, default=8080, help="Port to run the agent on")
     args = parser.parse_args()
-    
+
     today = datetime.now().strftime("%B %d, %Y")
     print(f"📰 AWS Daily Newsletter Agent starting on port {args.port}")
     print(f"📅 Today's newsletter date: {today}")
     print(f"📧 Email delivery: {'✅ Configured' if SNS_TOPIC_ARN else '❌ Missing SNS_TOPIC_ARN'}")
-    print(f"🧠 Memory: {'✅ Enabled' if MEMORY_ID else '❌ Disabled (set AGENTCORE_MEMORY_ID)'}")
-    print(f"📅 Processing articles from: {CUTOFF_DATE} onwards (last 24h only)")
-    
+    print(f"🧠 Memory: {'✅ Enabled' if MEMORY_ID else '❌ Disabled (set BEDROCK_AGENTCORE_MEMORY_ID)'}")
+    print(f"📅 Processing articles from: {CUTOFF_DATE} onwards")
+
     app.run(port=args.port)
