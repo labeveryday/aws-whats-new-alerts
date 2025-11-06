@@ -213,3 +213,7 @@ CLAUDE.md
 .claude
 .bedrock_agentcore/
 coder.py
+
+# CDK files
+cdk.out
+cdk.json

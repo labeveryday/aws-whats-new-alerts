@@ -384,7 +384,7 @@ Global namespace (not actor-specific) because:
 ## Support
 
 For issues or questions:
-1. Check [MEMORY_IMPLEMENTATION_PLAN.md](./MEMORY_IMPLEMENTATION_PLAN.md) for memory troubleshooting
+1. Check [../validation/README.md](../validation/README.md) for memory validation and troubleshooting
 2. Review CloudWatch logs for execution errors
 3. Verify infrastructure with `cdk diff` in backend/
 4. Test locally with `python agent.py --port 8080`

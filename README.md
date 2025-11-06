@@ -126,9 +126,9 @@ python invoke_agent.py --prompt "Generate daily AWS AI/ML newsletter for the las
 ```
 aws-whats-new-alerts/
 ├── README.md                      # This file
-├── CLAUDE.md                      # Instructions for Claude Code
 ├── .env                           # Auto-generated from CDK outputs
 ├── invoke_agent.py                # Manual testing script
+├── local_chat_client.py           # Local development client
 ├── backend/                       # CDK Infrastructure
 │   ├── app.py                     # CDK entry point
 │   ├── newsletter_stack.py        # Complete infrastructure stack
@@ -136,13 +136,16 @@ aws-whats-new-alerts/
 │   ├── cdk.json                   # CDK configuration
 │   ├── requirements.txt           # CDK dependencies
 │   └── README.md                  # Backend documentation
-└── agent/                         # AI Agent
-    ├── agent.py                   # Main agent code (production)
-    ├── requirements.txt           # Agent dependencies
-    ├── tools/                     # Custom tools (auto-loaded)
-    │   └── sns_tools.py          # SNS publish/subscribe
-    ├── README.md                  # Agent documentation
-    └── MEMORY_IMPLEMENTATION_PLAN.md  # Memory architecture details
+├── agent/                         # AI Agent
+│   ├── agent.py                   # Main agent code (production)
+│   ├── requirements.txt           # Agent dependencies
+│   ├── tools/                     # Custom tools (auto-loaded)
+│   │   └── sns_tools.py          # SNS publish/subscribe
+│   └── README.md                  # Agent documentation
+└── validation/                    # Memory validation tools
+    ├── validate_memory.py         # Memory validation script
+    ├── requirements.txt           # Validation dependencies
+    └── README.md                  # Validation documentation
 ```
 
 ---
@@ -258,7 +261,7 @@ aws logs tail /aws/bedrock-agentcore/runtimes/ --follow --region us-east-1
 ### EventBridge Scheduler Status
 ```bash
 aws scheduler get-schedule \
-    --name aws-newsletter-prod-daily-newsletter \
+    --name aws-newsletter-v2-prod-daily-newsletter \
     --region us-east-1
 ```
 
@@ -361,7 +364,7 @@ cdk deploy --context email=new-email@example.com
 ### Disable Autonomous Operation
 ```bash
 aws scheduler update-schedule \
-    --name aws-newsletter-prod-daily-newsletter \
+    --name aws-newsletter-v2-prod-daily-newsletter \
     --state DISABLED
 ```
 
@@ -401,9 +404,8 @@ cdk destroy  # Removes all infrastructure
 ## 📚 Documentation
 
 - **[agent/README.md](agent/README.md)** - Agent architecture and configuration
-- **[agent/MEMORY_IMPLEMENTATION_PLAN.md](agent/MEMORY_IMPLEMENTATION_PLAN.md)** - Memory system details
 - **[backend/README.md](backend/README.md)** - CDK infrastructure documentation
-- **[CLAUDE.md](CLAUDE.md)** - Instructions for Claude Code AI assistant
+- **[validation/README.md](validation/README.md)** - Memory validation tools and troubleshooting
 
 ---
 

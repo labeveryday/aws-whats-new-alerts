@@ -39,7 +39,7 @@ def get_stack_outputs(stack_name: str, region: str) -> Dict[str, str]:
         raise
 
 
-def generate_env_file(outputs: Dict[str, str], region: str, output_path: str = ".env"):
+def generate_env_file(outputs: Dict[str, str], region: str, email: Optional[str] = None, output_path: str = ".env"):
     """Generate .env file from stack outputs"""
 
     # Get account ID
@@ -54,6 +54,9 @@ def generate_env_file(outputs: Dict[str, str], region: str, output_path: str = "
 AWS_REGION={region}
 AWS_ACCOUNT_ID={account_id}
 
+# Email Configuration
+NEWSLETTER_EMAIL={email or ''}
+
 # SNS Configuration
 SNS_TOPIC_ARN={outputs.get('NewsletterTopicArn', '')}
 
@@ -66,6 +69,10 @@ AGENTCORE_RUNTIME_ROLE_ARN={outputs.get('AgentCoreRuntimeRoleArn', '')}
 
 # Agent Configuration (set after deployment)
 # AGENTCORE_ARN=arn:aws:bedrock-agentcore:region:account:agent-runtime/runtime-id
+
+# Agent Identity Configuration (for consistent memory)
+AGENT_ACTOR_ID=aws-newsletter-bot
+AGENT_SESSION_ID=aws-newsletter-main-session
 """
 
     # Add EventBridge Scheduler info if present
@@ -76,9 +83,12 @@ EVENTBRIDGE_SCHEDULE_NAME={outputs.get('EventBridgeScheduleName', '')}
 EVENTBRIDGE_ROLE_ARN={outputs.get('EventBridgeRoleArn', '')}
 """
 
-    # Write to root directory (parent of backend)
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    env_file_path = os.path.join(root_dir, output_path)
+    # Write to root directory (parent of backend) by default, or specified path
+    if output_path == ".env":
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        env_file_path = os.path.join(root_dir, output_path)
+    else:
+        env_file_path = output_path
 
     with open(env_file_path, 'w') as f:
         f.write(env_content)
@@ -109,17 +119,26 @@ def main():
                        help='CloudFormation stack name (default: aws-newsletter-prod)')
     parser.add_argument('--region', default='us-east-1',
                        help='AWS region (default: us-east-1)')
+    parser.add_argument('--email', 
+                       help='Newsletter email address')
     parser.add_argument('--output', default='.env',
-                       help='Output file name (default: .env)')
+                       help='Output file path (default: .env in project root)')
+    parser.add_argument('--agent-dir', action='store_true',
+                       help='Place .env file in ../agent directory for agent access')
 
     args = parser.parse_args()
+
+    # Handle agent directory option
+    if args.agent_dir:
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        args.output = os.path.join(os.path.dirname(backend_dir), 'agent', '.env')
 
     try:
         print(f"🔍 Retrieving stack outputs from: {args.stack_name}")
         outputs = get_stack_outputs(args.stack_name, args.region)
 
         print(f"📝 Generating .env file...")
-        generate_env_file(outputs, args.region, args.output)
+        generate_env_file(outputs, args.region, args.email, args.output)
 
         return 0
 

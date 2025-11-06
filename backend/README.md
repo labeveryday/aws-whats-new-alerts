@@ -64,7 +64,7 @@ cdk bootstrap
 cdk deploy --context email=your-email@example.com
 
 # 3. Generate .env file from stack outputs
-python generate_env.py
+python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2
 
 # 4. Wait 2-5 minutes for AgentCore Memory provisioning
 
@@ -77,15 +77,17 @@ python generate_env.py
 After infrastructure is deployed:
 
 ```bash
-# 6. Navigate to agent directory
+# 6. Generate .env file for agent with email address
+python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2 --email your-email@example.com --agent-dir
+
+# 7. Navigate to agent directory
 cd ../agent
 
-# 7. Configure and deploy agent
+# 8. Configure and deploy agent
 agentcore configure -e agent.py
 agentcore launch
 
-# 8. Copy the agent ARN from output and add to .env
-cd ..
+# 9. Copy the agent ARN from output and add to .env
 echo "AGENTCORE_ARN=<your-agent-arn>" >> .env
 ```
 
@@ -125,12 +127,15 @@ cdk synth
 ### Management
 
 ```bash
-# View stack outputs
-aws cloudformation describe-stacks --stack-name aws-newsletter-prod \
+# View stack outputs (use your actual stack name)
+aws cloudformation describe-stacks --stack-name aws-newsletter-v2-prod \
     --query 'Stacks[0].Outputs' --output table
 
-# Regenerate .env from existing stack
-python generate_env.py --stack-name aws-newsletter-prod --region us-east-1
+# Regenerate .env from existing stack (project root)
+python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2
+
+# Regenerate .env with email for agent directory
+python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2 --email your-email@example.com --agent-dir
 
 # Destroy stack and all resources
 cdk destroy
@@ -158,29 +163,59 @@ Pass configuration via CDK context (command line or `cdk.json`):
 |----------|----------|---------|-------------|
 | `email` | No | None | Email to subscribe to newsletter |
 | `stack_name` | No | `aws-newsletter` | Stack name prefix |
-| `region` | No | `us-east-1` | AWS region |
+| `region` | No | `us-west-2` | AWS region |
 | `agentcore_arn` | No | None | Agent ARN (required for scheduler) |
 | `enable_scheduler` | No | `false` | Enable EventBridge Scheduler |
 
 ### Environment File
 
-The `generate_env.py` script creates a `.env` file in the root directory:
+The `generate_env.py` script creates `.env` files for both the project root and agent directory:
 
+#### Basic Usage (Project Root)
 ```bash
-AWS_REGION=us-east-1
-AWS_ACCOUNT_ID=123456789012
-SNS_TOPIC_ARN=arn:aws:sns:region:account:aws-newsletter-topic
-BEDROCK_AGENTCORE_MEMORY_ID=memory-id
-BEDROCK_AGENTCORE_MEMORY_ARN=arn:aws:bedrock-agentcore:...
-AGENTCORE_RUNTIME_ROLE_ARN=arn:aws:iam::account:role/...
+python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2
+```
 
-# Add manually after agent deployment:
-AGENTCORE_ARN=arn:aws:bedrock-agentcore:...
+#### Agent Directory with Email
+```bash
+python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2 --email your-email@example.com --agent-dir
+```
+
+#### Generated .env File Contents
+```bash
+# AWS Configuration
+AWS_REGION=us-west-2
+AWS_ACCOUNT_ID=123456789012
+
+# Email Configuration
+NEWSLETTER_EMAIL=your-email@example.com
+
+# SNS Configuration
+SNS_TOPIC_ARN=arn:aws:sns:us-west-2:account:aws-newsletter-v2-newsletter-topic
+
+# AgentCore Memory Configuration
+BEDROCK_AGENTCORE_MEMORY_ID=aws_newsletter_v2_agent_memory-xyz
+BEDROCK_AGENTCORE_MEMORY_ARN=arn:aws:bedrock-agentcore:...
+
+# AgentCore Runtime Configuration
+AGENTCORE_RUNTIME_ROLE_ARN=arn:aws:iam::account:role/aws-newsletter-v2-agentcore-runtime-role
+
+# Agent Configuration (set after deployment)
+# AGENTCORE_ARN=arn:aws:bedrock-agentcore:...
 
 # Auto-included if EventBridge Scheduler enabled:
-EVENTBRIDGE_SCHEDULE_NAME=aws-newsletter-daily-newsletter
+EVENTBRIDGE_SCHEDULE_NAME=aws-newsletter-v2-daily-newsletter
 EVENTBRIDGE_ROLE_ARN=arn:aws:iam::account:role/...
 ```
+
+#### Command Line Options
+| Option | Description |
+|--------|-------------|
+| `--stack-name` | CloudFormation stack name |
+| `--region` | AWS region |
+| `--email` | Newsletter email address (included in .env) |
+| `--agent-dir` | Place .env file in ../agent directory |
+| `--output` | Custom output file path |
 
 ## Stack Outputs
 

@@ -20,6 +20,7 @@ from aws_cdk import (
     Duration
 )
 from aws_cdk import aws_bedrock_agentcore_alpha as agentcore
+from aws_cdk import aws_bedrock_alpha as bedrock
 from constructs import Construct
 import json
 
@@ -39,7 +40,7 @@ class NewsletterStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        self.stack_name = stack_name
+        self._stack_name = stack_name
         self.agentcore_arn = agentcore_arn
 
         # Create SNS topic
@@ -68,9 +69,8 @@ class NewsletterStack(Stack):
         topic = sns.Topic(
             self,
             "NewsletterTopic",
-            topic_name=f"{self.stack_name}-newsletter-topic",
-            display_name=f"{self.stack_name} Newsletter",
-            description="SNS topic for email newsletters"
+            topic_name=f"{self._stack_name}-newsletter-topic",
+            display_name=f"{self._stack_name} Newsletter"
         )
 
         # Add tags
@@ -80,20 +80,21 @@ class NewsletterStack(Stack):
 
     def _create_agentcore_memory(self) -> agentcore.Memory:
         """Create AgentCore Memory with semantic and user preference strategies"""
-        memory_name = f"{self.stack_name.replace('-', '_')}_agent_memory"
+        memory_name = f"{self._stack_name.replace('-', '_')}_agent_memory"
 
         memory = agentcore.Memory(
             self,
             "NewsletterMemory",
             memory_name=memory_name,
-            description=f"Memory store for {self.stack_name} agent to track processed AWS articles and newsletter history",
+            description=f"Memory store for {self._stack_name} agent to track processed AWS articles and newsletter history",
             expiration_duration=Duration.days(30),  # Events expire after 30 days
             memory_strategies=[
                 # Semantic strategy for intelligent content extraction
                 agentcore.MemoryStrategy.using_semantic(
                     name="newsletter_facts",
-                    namespaces=["/newsletter/facts", "/newsletter/articles"],
+                    namespaces=["/newsletter/articles"],
                     custom_extraction=agentcore.OverrideConfig(
+                        model=bedrock.BedrockFoundationModel.ANTHROPIC_CLAUDE_3_5_SONNET_V1_0,
                         append_to_prompt=(
                             "Extract facts for AWS article deduplication:\n"
                             "- Article URL (unique key for deduplication)\n"
@@ -107,7 +108,7 @@ class NewsletterStack(Stack):
                 # User preference strategy for remembering user preferences
                 agentcore.MemoryStrategy.using_user_preference(
                     name="user_prefs",
-                    namespaces=["/newsletter/preferences", "/user/settings"]
+                    namespaces=["/newsletter/preferences"]
                 )
             ]
         )
@@ -122,9 +123,9 @@ class NewsletterStack(Stack):
         role = iam.Role(
             self,
             "AgentCoreRuntimeRole",
-            role_name=f"{self.stack_name}-agentcore-runtime-role",
+            role_name=f"{self._stack_name}-agentcore-runtime-role",
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
-            description=f"Role for {self.stack_name} AgentCore Runtime to publish to SNS"
+            description=f"Role for {self._stack_name} AgentCore Runtime to publish to SNS"
         )
 
         # Add policy to publish to SNS topic
@@ -163,9 +164,9 @@ class NewsletterStack(Stack):
         eventbridge_role = iam.Role(
             self,
             "EventBridgeRole",
-            role_name=f"{self.stack_name}-eventbridge-role",
+            role_name=f"{self._stack_name}-eventbridge-role",
             assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
-            description=f"Role for EventBridge Scheduler to invoke {self.stack_name} AgentCore Runtime"
+            description=f"Role for EventBridge Scheduler to invoke {self._stack_name} AgentCore Runtime"
         )
 
         # Add policy to invoke AgentCore Runtime
@@ -178,7 +179,7 @@ class NewsletterStack(Stack):
         )
 
         # Create EventBridge Schedule
-        schedule_name = f"{self.stack_name}-daily-newsletter"
+        schedule_name = f"{self._stack_name}-daily-newsletter"
 
         # Prepare the input payload for AgentCore Runtime
         input_payload = {
@@ -192,7 +193,7 @@ class NewsletterStack(Stack):
             self,
             "DailySchedule",
             name=schedule_name,
-            description=f"Daily trigger for {self.stack_name} newsletter agent",
+            description=f"Daily trigger for {self._stack_name} newsletter agent",
             schedule_expression="cron(0 11 * * ? *)",  # 6 AM EST / 11 AM UTC daily
             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
                 mode="OFF"
@@ -239,7 +240,7 @@ class NewsletterStack(Stack):
             "NewsletterTopicArn",
             value=self.newsletter_topic.topic_arn,
             description="ARN of the newsletter SNS topic",
-            export_name=f"{self.stack_name}-newsletter-topic-arn"
+            export_name=f"{self._stack_name}-newsletter-topic-arn"
         )
 
         CfnOutput(
@@ -247,7 +248,7 @@ class NewsletterStack(Stack):
             "MemoryId",
             value=self.memory.memory_id,
             description="ID of the AgentCore Memory",
-            export_name=f"{self.stack_name}-memory-id"
+            export_name=f"{self._stack_name}-memory-id"
         )
 
         CfnOutput(
@@ -255,7 +256,7 @@ class NewsletterStack(Stack):
             "MemoryArn",
             value=self.memory.memory_arn,
             description="ARN of the AgentCore Memory",
-            export_name=f"{self.stack_name}-memory-arn"
+            export_name=f"{self._stack_name}-memory-arn"
         )
 
         CfnOutput(
@@ -263,7 +264,7 @@ class NewsletterStack(Stack):
             "AgentCoreRuntimeRoleArn",
             value=self.agentcore_runtime_role.role_arn,
             description="ARN of the AgentCore Runtime role",
-            export_name=f"{self.stack_name}-agentcore-runtime-role-arn"
+            export_name=f"{self._stack_name}-agentcore-runtime-role-arn"
         )
 
         # EventBridge Scheduler outputs (if created)
@@ -273,7 +274,7 @@ class NewsletterStack(Stack):
                 "EventBridgeScheduleName",
                 value=self.scheduler_resources["schedule_name"],
                 description="Name of the EventBridge Schedule",
-                export_name=f"{self.stack_name}-schedule-name"
+                export_name=f"{self._stack_name}-schedule-name"
             )
 
             CfnOutput(
@@ -281,5 +282,5 @@ class NewsletterStack(Stack):
                 "EventBridgeRoleArn",
                 value=self.scheduler_resources["role"].role_arn,
                 description="ARN of the EventBridge role",
-                export_name=f"{self.stack_name}-eventbridge-role-arn"
+                export_name=f"{self._stack_name}-eventbridge-role-arn"
             )
