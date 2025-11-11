@@ -76,21 +76,28 @@ python generate_env.py
 - ✅ AgentCore Memory with semantic extraction
 - ✅ IAM roles for AgentCore Runtime
 
-### 2️⃣ Deploy Agent (2 minutes)
+### 2️⃣ Deploy Agent (2 minutes) 
 ```bash
 cd ../agent
 
 # Configure and launch
-agentcore configure -e agent.py
+agentcore configure -e agent.py --region <aws-cdk-deployment-region> 
+
 agentcore launch
 
 # Copy the agent ARN from output
 ```
+>NOTE: Configure:
+>-agent name: newsletter_agent
+>-Execution Role: AGENTCORE_RUNTIME_ROLE_ARN # from the .env
 
 **Add agent ARN to .env:**
 ```bash
 cd ..
-echo "AGENTCORE_ARN=arn:aws:bedrock-agentcore:region:account:agent/agent-id" >> .env
+
+# 1. Copy the Agent ARN from the terminal output
+# 2. Open the .env 
+# 3. Uncomment AGENTCORE_ARN and replace with your Agent ARN output
 ```
 
 ### 3️⃣ Enable Autonomous Operation (Optional)
@@ -106,6 +113,15 @@ cdk deploy --context email=your-email@example.com \
 **What this adds:**
 - ✅ EventBridge Scheduler (6 AM EST daily)
 - ✅ IAM role for EventBridge → AgentCore invocation
+
+**Example EventBridge Schedule Payload**
+
+```json
+{
+  "AgentRuntimeArn": "arn:aws:bedrock-agentcore:us-west-2:0123456789112:runtime/newsletter_agent",
+  "Payload": "{\"prompt\": \"Generate daily AWS AI/ML newsletter for the last 24 hours\"}"
+}
+```
 
 ### 4️⃣ Test Manually
 ```bash

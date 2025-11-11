@@ -214,6 +214,7 @@ CLAUDE.md
 .bedrock_agentcore/
 coder.py
 
-# CDK files
+# CDK asset staging directory
+.cdk.staging
 cdk.out
-cdk.json
+.bedrock_agentcore.yaml

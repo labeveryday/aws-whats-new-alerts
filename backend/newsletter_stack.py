@@ -150,6 +150,32 @@ class NewsletterStack(Stack):
             )
         )
 
+        # Add AgentCore Memory permissions
+        role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "bedrock-agentcore:ListEvents",
+                    "bedrock-agentcore:CreateEvent",
+                    "bedrock-agentcore:GetMemory",
+                    "bedrock-agentcore:QueryMemory"
+                ],
+                resources=[self.memory.memory_arn]
+            )
+        )
+
+        # Add Bedrock model permissions
+        role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "bedrock:InvokeModel",
+                    "bedrock:InvokeModelWithResponseStream"
+                ],
+                resources=["*"]
+            )
+        )
+
         # Add tags
         cdk.Tags.of(role).add("Component", "AgentCoreRuntimeRole")
 
@@ -166,25 +192,19 @@ class NewsletterStack(Stack):
             "EventBridgeRole",
             role_name=f"{self._stack_name}-eventbridge-role",
             assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
-            description=f"Role for EventBridge Scheduler to invoke {self._stack_name} AgentCore Runtime"
-        )
-
-        # Add policy to invoke AgentCore Runtime
-        eventbridge_role.add_to_policy(
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["bedrock-agentcore:InvokeAgentRuntime"],
-                resources=[self.agentcore_arn]
-            )
+            description=f"Role for EventBridge Scheduler to invoke {self._stack_name} AgentCore Runtime",
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name("BedrockAgentCoreFullAccess")
+            ]
         )
 
         # Create EventBridge Schedule
         schedule_name = f"{self._stack_name}-daily-newsletter"
 
-        # Prepare the input payload for AgentCore Runtime
+        # Prepare the input payload for AgentCore Runtime (matching console format)
         input_payload = {
-            "agentRuntimeArn": self.agentcore_arn,
-            "payload": json.dumps({
+            "AgentRuntimeArn": self.agentcore_arn,
+            "Payload": json.dumps({
                 "prompt": "Generate daily AWS AI/ML newsletter for the last 24 hours. Check memory to avoid sending duplicate articles."
             })
         }
@@ -196,11 +216,12 @@ class NewsletterStack(Stack):
             description=f"Daily trigger for {self._stack_name} newsletter agent",
             schedule_expression="cron(0 11 * * ? *)",  # 6 AM EST / 11 AM UTC daily
             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
-                mode="OFF"
+                mode="FLEXIBLE",
+                maximum_window_in_minutes=5
             ),
             state="ENABLED",
             target=scheduler.CfnSchedule.TargetProperty(
-                arn="arn:aws:scheduler:::aws-sdk:bedrock-agentcore:invokeAgentRuntime",
+                arn="arn:aws:scheduler:::aws-sdk:bedrockagentcore:invokeAgentRuntime",
                 role_arn=eventbridge_role.role_arn,
                 input=json.dumps(input_payload),
                 retry_policy=scheduler.CfnSchedule.RetryPolicyProperty(
@@ -222,8 +243,9 @@ class NewsletterStack(Stack):
     def _subscribe_test_email(self, email: str):
         """Subscribe a test email to the newsletter"""
         self.newsletter_topic.add_subscription(
-            sns_subs.EmailSubscription(email)
+            sns_subs.EmailSubscription(email)  # ✅ Uses correct import
         )
+
 
         # Output subscription info
         CfnOutput(

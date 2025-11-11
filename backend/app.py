@@ -25,7 +25,7 @@ environment = app.node.try_get_context("environment") or "prod"
 agentcore_arn = app.node.try_get_context("agentcore_arn")
 enable_scheduler = app.node.try_get_context("enable_scheduler") == "true"
 
-# Create the stack
+# Create the stack (Gets region from environment)
 newsletter_stack = NewsletterStack(
     app,
     f"{stack_name}-{environment}",
