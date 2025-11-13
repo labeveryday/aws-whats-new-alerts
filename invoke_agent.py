@@ -22,7 +22,8 @@ agent_arn = os.getenv("AGENTCORE_ARN", "")
 if not agent_arn:
     raise ValueError("AGENTCORE_ARN not set in .env file")
 
-agent_core_client = boto3.client('bedrock-agentcore', region_name="us-west-2")
+region = os.getenv("AWS_REGION", "us-west-2")
+agent_core_client = boto3.client('bedrock-agentcore', region_name=region)
 
 def invoke_agent(prompt):
     payload = json.dumps({"prompt": prompt}).encode()

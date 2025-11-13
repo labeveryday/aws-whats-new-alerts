@@ -13,6 +13,7 @@ import aws_cdk as cdk
 from aws_cdk import (
     Stack,
     aws_sns as sns,
+    aws_sqs as sqs,
     aws_iam as iam,
     aws_sns_subscriptions as sns_subs,
     aws_scheduler as scheduler,
@@ -186,6 +187,19 @@ class NewsletterStack(Stack):
         if not self.agentcore_arn:
             return None
 
+        # Create SQS Dead Letter Queue for failed schedule invocations
+        dlq = sqs.Queue(
+            self,
+            "SchedulerDLQ",
+            queue_name=f"{self._stack_name}-scheduler-dlq",
+            retention_period=Duration.days(14),  # Retain failed events for 14 days
+            encryption=sqs.QueueEncryption.SQS_MANAGED,
+            description=f"Dead Letter Queue for {self._stack_name} EventBridge Scheduler failures"
+        )
+
+        # Add tags
+        cdk.Tags.of(dlq).add("Component", "SchedulerDLQ")
+
         # Create IAM role for EventBridge to invoke AgentCore Runtime
         eventbridge_role = iam.Role(
             self,
@@ -196,6 +210,19 @@ class NewsletterStack(Stack):
             managed_policies=[
                 iam.ManagedPolicy.from_aws_managed_policy_name("BedrockAgentCoreFullAccess")
             ]
+        )
+
+        # Add policy to send messages to DLQ
+        eventbridge_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "sqs:SendMessage",
+                    "sqs:GetQueueAttributes",
+                    "sqs:GetQueueUrl"
+                ],
+                resources=[dlq.queue_arn]
+            )
         )
 
         # Create EventBridge Schedule
@@ -227,6 +254,9 @@ class NewsletterStack(Stack):
                 retry_policy=scheduler.CfnSchedule.RetryPolicyProperty(
                     maximum_retry_attempts=3,
                     maximum_event_age_in_seconds=3600
+                ),
+                dead_letter_config=scheduler.CfnSchedule.DeadLetterConfigProperty(
+                    arn=dlq.queue_arn
                 )
             )
         )
@@ -237,7 +267,8 @@ class NewsletterStack(Stack):
         return {
             "role": eventbridge_role,
             "schedule": schedule,
-            "schedule_name": schedule_name
+            "schedule_name": schedule_name,
+            "dlq": dlq
         }
 
     def _subscribe_test_email(self, email: str):
@@ -305,4 +336,20 @@ class NewsletterStack(Stack):
                 value=self.scheduler_resources["role"].role_arn,
                 description="ARN of the EventBridge role",
                 export_name=f"{self._stack_name}-eventbridge-role-arn"
+            )
+
+            CfnOutput(
+                self,
+                "SchedulerDLQArn",
+                value=self.scheduler_resources["dlq"].queue_arn,
+                description="ARN of the Scheduler Dead Letter Queue",
+                export_name=f"{self._stack_name}-scheduler-dlq-arn"
+            )
+
+            CfnOutput(
+                self,
+                "SchedulerDLQUrl",
+                value=self.scheduler_resources["dlq"].queue_url,
+                description="URL of the Scheduler Dead Letter Queue",
+                export_name=f"{self._stack_name}-scheduler-dlq-url"
             )

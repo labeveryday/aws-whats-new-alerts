@@ -81,6 +81,8 @@ AGENT_SESSION_ID=aws-newsletter-main-session
 # EventBridge Scheduler Configuration
 EVENTBRIDGE_SCHEDULE_NAME={outputs.get('EventBridgeScheduleName', '')}
 EVENTBRIDGE_ROLE_ARN={outputs.get('EventBridgeRoleArn', '')}
+SCHEDULER_DLQ_ARN={outputs.get('SchedulerDLQArn', '')}
+SCHEDULER_DLQ_URL={outputs.get('SchedulerDLQUrl', '')}
 """
 
     # Write to root directory (parent of backend) by default, or specified path
@@ -101,6 +103,7 @@ EVENTBRIDGE_ROLE_ARN={outputs.get('EventBridgeRoleArn', '')}
 
     if 'EventBridgeScheduleName' in outputs:
         print(f"   EventBridge Schedule: {outputs.get('EventBridgeScheduleName', 'N/A')}")
+        print(f"   Scheduler DLQ ARN: {outputs.get('SchedulerDLQArn', 'N/A')}")
 
     print(f"\n📌 Next Steps:")
     print(f"   1. Wait 2-5 minutes for AgentCore Memory to be fully provisioned")
@@ -117,8 +120,8 @@ def main():
     )
     parser.add_argument('--stack-name', default='aws-newsletter-prod',
                        help='CloudFormation stack name (default: aws-newsletter-prod)')
-    parser.add_argument('--region', default='us-east-1',
-                       help='AWS region (default: us-east-1)')
+    parser.add_argument('--region', default='us-west-2',
+                       help='AWS region (default: us-west-2)')
     parser.add_argument('--email', 
                        help='Newsletter email address')
     parser.add_argument('--output', default='.env',
