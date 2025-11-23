@@ -3,21 +3,43 @@ AWS Daily Newsletter Agent
 Creates daily email newsletters in professional format with numbered announcements
 """
 import os
-import argparse
-from datetime import datetime
+import sys
+import json
+import logging
+import uuid
+
+# Add current directory to path
+sys.path.append(os.path.dirname(__file__))
+
+# Third-party imports
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig, RetrievalConfig
 from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
+from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands import Agent
-from strands_tools import http_request, current_time
-import sys
-import os
-sys.path.append(os.path.dirname(__file__))
-from dotenv import load_dotenv
-from pprint import pprint
+from strands_tools import current_time
 
+# Local imports
+from secrets_loader import load_secrets
 
-load_dotenv()
+# Configure logging to stdout
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+# Ensure logs are flushed immediately
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+# Load configuration from AWS Secrets Manager
+# This replaces local .env files for production security
+SECRET_NAME_PREFIX = "aws-newsletter/agent-config"
+AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
+
+logger.info(f"Attempting to load configuration from secret: {SECRET_NAME_PREFIX} in {AWS_REGION}")
+load_secrets(SECRET_NAME_PREFIX, AWS_REGION)
 
 # Configuration
 AWS_URL = "https://aws.amazon.com/about-aws/whats-new/recent/feed/"
@@ -26,21 +48,33 @@ MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
 CUTOFF_DATE = "2022-10-01"
 
 # Agent Identity Configuration
-ACTOR_ID = os.getenv("AGENT_ACTOR_ID", "aws-newsletter-bot")
-SESSION_ID = os.getenv("AGENT_SESSION_ID", "aws-newsletter-main-session")
+ACTOR_ID = os.getenv("AGENT_ACTOR_ID", "aws_newsletter_bot")
+# Use a random session ID by default to prevent stuck tool states during development/demo
+# For production, you'd want to persist this for user continuity
+SESSION_ID = os.getenv("AGENT_SESSION_ID", str(uuid.uuid4()))
+AGENT_NAME = os.getenv("AGENT_NAME", "aws_newsletter_bot")
+
+# Print configuration for verification (exclude sensitive keys if any)
+logger.info(f"Configuration Loaded: SNS_TOPIC_ARN={SNS_TOPIC_ARN}, MEMORY_ID={MEMORY_ID}")
 
 SYSTEM_PROMPT = f"""
 You are an AWS Newsletter Agent that creates professional daily email newsletters about AWS announcements.
 
-CORE MISSION: Generate intelligent, ranked newsletters focused on AI/ML-related AWS announcements (unless user requests broader coverage).
+CORE MISSION: Generate intelligent, ranked newsletters focused on **Agentic AI** and AI/ML-related AWS announcements.
 
-═══════════════════════════════════════════════════════════════
+SELF-DISCOVERY & SCHEDULING:
+You are an autonomous agent. If the user asks you to schedule yourself or create a recurring task:
+1. **CHECK IDENTITY**: You likely do not know your own `AgentRuntimeArn` yet.
+2. **DISCOVER**: Call `find_agent_id(agent_name="{AGENT_NAME}")` to retrieve it.
+3. **ACT**: Use the discovered ARN to call `manage_eventbridge_schedule`.
+
+════════════════════════════════════════════════
 WORKFLOW
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
 
 1. Use current_time tool to get today's date
 
-2. Use http_request tool to fetch latest news from {AWS_URL}
+2. Use fetch_aws_news tool to fetch latest news from {AWS_URL}
 
 3. RESPECT USER'S TIME FRAME:
    - "last week" or "7 days" → process last 7 days
@@ -52,14 +86,20 @@ WORKFLOW
 
 4. CONTENT FILTERING:
 
-   DEFAULT MODE (AI-focused):
-   - AI, Artificial Intelligence, Machine Learning, ML
-   - Agentic AI, autonomous agents, AI workflows
-   - Bedrock, Claude, Anthropic, generative AI, LLMs
-   - Strands agents, Kiro, AgentCore
-   - SageMaker, AI/ML services, intelligent automation
-   - Computer vision, NLP, natural language processing
-   - AI model training, inference, fine-tuning, embeddings
+   **PRIMARY FOCUS (Rank Highest): Agentic AI**
+   - **AgentCore**, Amazon Bedrock AgentCore
+   - **Strands**, Strands Agents, AI Agents
+   - **Kiro**
+   - **MCP** (Model Context Protocol)
+   - **A2A** (Agent-to-Agent)
+   - **Claude** (Claude 3.5, Claude 3.7, etc.)
+   - **Multi-Agent** Systems
+
+   **SECONDARY FOCUS: General AI/ML**
+   - Bedrock (general features), SageMaker
+   - Generative AI, LLMs, Foundation Models
+   - Computer Vision, NLP
+   - Training, Inference, Fine-tuning
 
    OVERRIDE: User says "all announcements" or "broad coverage" → include all AWS news
 
@@ -71,10 +111,9 @@ WORKFLOW
 
 6. INTELLIGENT RANKING:
    For each NEW article, analyze and rank by developer impact considering:
-   - Service importance (Bedrock/Claude > SageMaker > other AI services)
+   - **Topic Priority**: **Agentic AI** (AgentCore, Strands, MCP) > **Core AI** (Bedrock/Claude) > **Other AI/ML** (SageMaker)
    - Availability status (GA > Public Preview > Limited Preview)
    - Developer impact (new capabilities > improvements > bug fixes)
-   - Breadth of use cases (general-purpose > niche)
    - Innovation level (breakthrough features > incremental updates)
 
    Order articles from HIGHEST to LOWEST developer impact.
@@ -82,93 +121,98 @@ WORKFLOW
 7. NEWSLETTER GENERATION:
    - If NO new articles: Send "Nothing new today" version
    - If new articles: Create formatted newsletter with ranked announcements
-   - Generate intelligent TLDR highlighting key themes/trends
+   - Generate intelligent TLDR highlighting key themes/trends (especially Agentic AI)
    - Create concise subject line capturing main theme
 
 8. Send email via publish_message tool to: {SNS_TOPIC_ARN}
 
 9. List processed article URLs in your response (for automatic memory extraction)
 
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
 NEWSLETTER FORMAT
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
 
 **SUBJECT LINE:**
 [AWS-AI-NEWS] [Concise theme/trend from today's announcements]
 
 Examples:
 - "[AWS-AI-NEWS] Bedrock Agents Get Multi-Agent Orchestration"
-- "[AWS-AI-NEWS] 3 Major AI Service Updates: Bedrock, SageMaker, Q"
+- "[AWS-AI-NEWS] 3 Major Agentic Updates: AgentCore, Strands, MCP"
 - "[AWS-AI-NEWS] Claude 3.7 Sonnet Now Available in Bedrock"
+- "[AWS-AI-NEWS] Strands Agents Now Supports Fine-Tuning Models"
+- "[AWS-AI-NEWS] Amazon Bedrock AgentCore Now supports MCP (Model Context Protocol)"
 
 If user requested all announcements: Use [AWS-NEWS] instead
 
 **MESSAGE BODY:**
 ```
-═══════════════════════════════════════════════════════════════
-🌟 AWS AI/ML NEWSLETTER | [FULL DATE] 🌟
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════
+🌟 AWS AGENTIC & AI/ML NEWSLETTER | [FULL DATE] 🌟
+════════════════════════════════════════
 
 📰 TL;DR
-───────────────────────────────────────────────────────────────
-[2-4 sentences synthesizing key themes, trends, or patterns across today's announcements. Focus on the "so what" - why these updates matter to AI/ML developers.]
+────────────────────────────────────────────────
+[2-4 sentences synthesizing key themes, trends, or patterns across today's announcements. Highlight Agentic AI updates first.]
 
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
 🎯 TODAY'S ANNOUNCEMENTS (Ranked by Developer Impact)
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
 
 1. **[ANNOUNCEMENT TITLE]** | [ANNOUNCEMENT DATE]
-   🔗 [FULL BLOG POST URL]
 
    [2-3 sentence summary covering:
    - What was announced/updated
    - Key capabilities or improvements
-   - Why this matters for AI/ML developers]
+   - Why this matters for Agentic AI or ML developers]
+
+   🔗 [FULL BLOG POST URL]
 
 2. **[NEXT ANNOUNCEMENT]** | [DATE]
-   🔗 [URL]
 
    [Summary...]
+   
+   🔗 [URL]
 
 [Continue for all announcements, numbered in descending priority order...]
 
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
 📧 Stay Connected
-───────────────────────────────────────────────────────────────
+────────────────────────────────────────────────
 Questions? Visit aws.amazon.com
 🔔 Subscribe to AWS What's New: aws.amazon.com/new/
 
 Generated on [TODAY'S DATE]
 © 2025 Amazon Web Services, Inc.
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
 ```
 
 **NO NEW ANNOUNCEMENTS VERSION:**
 ```
-═══════════════════════════════════════════════════════════════
-🌟 AWS AI/ML NEWSLETTER | [FULL DATE] 🌟
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
+🌟 AWS AGENTIC & AI/ML NEWSLETTER | [FULL DATE] 🌟
+════════════════════════════════════════════════
 
 📰 TL;DR
-───────────────────────────────────────────────────────────────
-No new AWS AI/ML announcements today. Check back tomorrow for the latest updates!
+────────────────────────────────────────────────
+No new AWS Agentic or AI/ML announcements today. Check back tomorrow for the latest updates!
 
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
 📧 Stay Connected
-───────────────────────────────────────────────────────────────
+────────────────────────────────────────────────
 Questions? Visit aws.amazon.com
 🔔 Subscribe to AWS What's New: aws.amazon.com/new/
 
 Generated on [TODAY'S DATE]
 © 2025 Amazon Web Services, Inc.
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
 ```
 
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
 CRITICAL RULES
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
 
-✓ DEFAULT: AI/ML content only (unless user asks for "all announcements")
+✓ DEFAULT: **Agentic AI** & AI/ML content only (unless user asks for "all announcements")
+✓ **PRIORITIZE**: AgentCore, Strands, MCP, Kiro, A2A updates ABOVE general ML
 ✓ LISTEN to user's time frame specification
 ✓ RANK announcements by developer impact (most important first)
 ✓ Include actual announcement date from AWS (not today's date)
@@ -178,11 +222,13 @@ CRITICAL RULES
 ✓ Use [AWS-AI-NEWS] for AI-focused, [AWS-NEWS] for broad coverage
 ✓ Only include NEW articles (skip duplicates from memory)
 ✓ If zero new announcements, send "No new announcements" version
-✓ Focus summaries on AI/ML implications and developer value
+✓ Focus summaries on Agentic AI implications and developer value
 ✓ Always use exact ASCII border style shown above
 ✓ List processed article URLs in response for memory tracking
 
-═══════════════════════════════════════════════════════════════
+════════════════════════════════════════════════
+NOTE: Never share ARN or other sensitive information in your response.
+════════════════════════════════════════════════
 """
 
 # Instantiate Bedrock AgentCore
@@ -193,14 +239,34 @@ async def invoke_agent(payload, context):
     """
     Handler for daily newsletter generation with proper memory integration.
     Creates a new agent instance per invocation (no lazy loading with memory).
+    Supports direct invocation and streaming response.
     """
     if not MEMORY_ID:
-        return {"error": "Memory not configured. Set BEDROCK_AGENTCORE_MEMORY_ID environment variable."}
+        raise ValueError("Memory not configured. Set BEDROCK_AGENTCORE_MEMORY_ID environment variable.")
 
     try:
+        # Handle payload parsing (Robust handling like AWS Samples)
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        
+        prompt = None
+        if isinstance(payload, dict):
+            if "input" in payload and isinstance(payload["input"], dict):
+                prompt = payload["input"].get("prompt")
+            else:
+                prompt = payload.get("prompt")
+        
+        if not prompt:
+            prompt = "Generate daily AWS AI/ML newsletter for the last 24 hours"
+            logger.info("No prompt found in payload, using default.")
+
+        logger.info(f"Received prompt: {prompt}")
+
         # Use consistent actor and session IDs for persistent memory
         actor_id = ACTOR_ID
-        session_id = SESSION_ID
+        # Force random session ID to avoid ValidationException from stuck tool states
+        # This ensures every request starts with a clean slate for the demo
+        session_id = str(uuid.uuid4())
 
         # Create agent instance with memory configuration
         # Note: We create a new instance per invocation to ensure proper session isolation
@@ -229,57 +295,31 @@ async def invoke_agent(payload, context):
             region_name=region
         )
 
-        agent = Agent(
-            system_prompt=SYSTEM_PROMPT,
-            tools=[http_request, current_time],
-            load_tools_from_directory=True,  # Loads the newsletter_tools automatically
-            session_manager=session_manager
+        conversation_manager = SlidingWindowConversationManager(
+            should_truncate_results=True,
+            window_size=40,
         )
 
-        pprint(agent.messages)
+        agent = Agent(
+            system_prompt=SYSTEM_PROMPT,
+            tools=[current_time],
+            load_tools_from_directory=True,  # Loads aws_news_tools.py and sns_tools.py automatically,
+            #session_manager=session_manager,
+            conversation_manager=conversation_manager
+        )
 
-        # Pass prompt directly to agent
-        prompt = payload.get("prompt", "Generate daily AWS AI/ML newsletter for the last 24 hours")
+        # Non-streaming response (Stable for presentation via Function URL)
+        response = agent(prompt)
+        logger.info("Agent execution completed successfully")
         
-        # Add retry logic for Bedrock calls
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = agent(prompt)
-                return response
-            except Exception as agent_error:
-                if "serviceUnavailableException" in str(agent_error) and attempt < max_retries - 1:
-                    import time
-                    wait_time = (2 ** attempt) * 1  # Exponential backoff: 1s, 2s, 4s
-                    print(f"Bedrock unavailable, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    raise agent_error
+        # Return the full response object/text
+        return response
 
     except Exception as e:
         error_msg = str(e)
-        
-        # Provide more helpful error messages
-        if "serviceUnavailableException" in error_msg:
-            return {"error": "Bedrock service temporarily unavailable. EventBridge will retry this request automatically."}
-        elif "throttlingException" in error_msg:
-            return {"error": "Rate limit exceeded. Reduce request frequency or upgrade quota."}
-        elif "validationException" in error_msg:
-            return {"error": f"Configuration error: {error_msg}"}
-        else:
-            return {"error": f"Agent execution failed: {error_msg}"}
+        logger.error(f"Global handler exception: {error_msg}", exc_info=True)
+        # Return error as a dict so it's serialized cleanly
+        return {"error": f"Agent execution failed: {error_msg}"}
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AWS Daily Newsletter Agent")
-    parser.add_argument("--port", type=int, default=8080, help="Port to run the agent on")
-    args = parser.parse_args()
-
-    today = datetime.now().strftime("%B %d, %Y")
-    print(f"📰 AWS Daily Newsletter Agent starting on port {args.port}")
-    print(f"📅 Today's newsletter date: {today}")
-    print(f"📧 Email delivery: {'✅ Configured' if SNS_TOPIC_ARN else '❌ Missing SNS_TOPIC_ARN'}")
-    print(f"🧠 Memory: {'✅ Enabled' if MEMORY_ID else '❌ Disabled (set BEDROCK_AGENTCORE_MEMORY_ID)'}")
-    print(f"📅 Processing articles from: {CUTOFF_DATE} onwards")
-
-    app.run(port=args.port)
+    app.run()

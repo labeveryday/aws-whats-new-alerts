@@ -1,40 +1,53 @@
 # AWS Newsletter Backend Infrastructure
 
-CDK-based infrastructure for the AWS What's New Alerts newsletter system. Deploys SNS for email delivery, AgentCore Memory for article deduplication, and optional EventBridge Scheduler for autonomous operation.
+CDK-based infrastructure for the AWS What's New Alerts newsletter system. Deploys SNS for email delivery, AgentCore Memory for article deduplication, Secrets Manager for configuration, and optional EventBridge Scheduler.
 
 ## Architecture
 
 ```
-EventBridge Scheduler (daily 6 AM EST / 11 AM UTC) → Bedrock AgentCore Runtime
-                                               ↓
-                                         Agent execution
-                                               ↓
-                    ┌──────────────────────────┼──────────────────┐
-                    ↓                          ↓                  ↓
-              AWS News Feed            AgentCore Memory      SNS Topic
-                    ↓                          ↓                  ↓
-                 Filtering               Deduplication      Email subscribers
+Secrets Manager (Config) ←────────┐
+                                  │
+EventBridge Scheduler ────────→ Bedrock AgentCore Runtime
+                                  │
+                            Agent execution
+                                  │
+       ┌──────────────────────────┼──────────────────┐
+       ↓                          ↓                  ↓
+ AWS News Feed            AgentCore Memory      SNS Topic
+       ↓                          ↓                  ↓
+    Filtering               Deduplication      Email subscribers
 ```
 
 ## Features
 
 - 📧 **Email Newsletter Distribution** via SNS
 - 🧠 **Article Deduplication** via AgentCore Memory (30-day retention)
-- 🤖 **Autonomous Operation** via EventBridge Scheduler (optional)
+- 🔒 **Secure Configuration** via AWS Secrets Manager
+- 💬 **Secure Chat UI** with Cognito Auth, S3 Hosting, and CloudFront
+- 🛡️ **Secure Proxy** validates Cognito JWTs before invoking Agent
+- ⚡ **Long-Running Requests** via Lambda Function URL (Proxy)
+- 🤖 **Autonomous Operation** via EventBridge Scheduler
 - 🔐 **IAM Security** with least privilege roles
 - 🚀 **Infrastructure as Code** with AWS CDK
-- 📊 **CloudFormation State Management** for reliable deployments
 
 ## Infrastructure Components
 
-### Core Resources (Always Deployed)
+### Core Resources
 1. **SNS Topic** - Email distribution to subscribers
-2. **AgentCore Memory** - Semantic + user preference strategies for article tracking
-3. **AgentCore Runtime Role** - IAM role for agent to publish to SNS
+2. **AgentCore Memory** - Semantic + user preference strategies
+3. **Secrets Manager Secret** - Stores agent configuration (ARNs, IDs)
+4. **AgentCore Runtime Role** - IAM role for agent execution
 
-### Optional Resources (Autonomous Mode)
-4. **EventBridge Scheduler** - Daily trigger at 6 AM EST (11 AM UTC)
-5. **EventBridge Role** - IAM role to invoke AgentCore Runtime
+### Frontend Resources
+5. **Cognito User Pool** - User management (Sign up/in)
+6. **Cognito Identity Pool** - AWS credentials for authenticated users
+7. **Lambda Function URL Proxy** - Secure, long-running proxy to AgentCore Runtime (bypasses API Gateway 29s timeout)
+8. **S3 Bucket** - Static website hosting
+9. **CloudFront** - HTTPS content delivery
+
+### Optional Resources
+10. **EventBridge Scheduler** - Daily trigger at 6 AM EST (11 AM UTC)
+11. **EventBridge Role** - IAM role to invoke AgentCore Runtime
 
 ## Quick Start
 
@@ -52,6 +65,9 @@ pip install -r requirements.txt
 
 # Configure AWS CLI
 aws configure
+
+# Start Docker Desktop (REQUIRED for bundling Lambda dependencies)
+# Open Docker Desktop on your machine
 ```
 
 ### Initial Deployment
@@ -60,16 +76,23 @@ aws configure
 # 1. Bootstrap CDK (first time only per account/region)
 cdk bootstrap
 
-# 2. Deploy infrastructure
+# 2. Deploy infrastructure (Backend + Frontend)
+# This uses Docker to bundle python-jose and requests into the Lambda layer
 cdk deploy --context email=your-email@example.com
 
-# 3. Generate .env file from stack outputs
-python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2
+# 3. Configure Agent Secrets & CLI Environment
+#    - Updates AWS Secrets Manager (for runtime)
+#    - Creates local ../agent/agent_config.env (for deployment CLI)
+python configure_secret.py --region us-west-2 --email your-email@example.com
 
-# 4. Wait 2-5 minutes for AgentCore Memory provisioning
+# 4. Deploy Frontend Code
+#    - Generates config.js from stack outputs
+#    - Uploads frontend/index.html to S3
+python deploy_frontend.py
 
-# 5. Check email and confirm SNS subscription
-#    (Click the confirmation link in the email)
+# 5. Wait 2-5 minutes for AgentCore Memory provisioning
+
+# 6. Check email and confirm SNS subscription
 ```
 
 ### Deploy Agent
@@ -77,31 +100,16 @@ python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2
 After infrastructure is deployed:
 
 ```bash
-# 6. Generate .env file for agent with email address
-python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2 --email your-email@example.com --agent-dir
-
-# 7. Navigate to agent directory
+# 6. Navigate to agent directory
 cd ../agent
 
-# 8. Configure and deploy agent
-agentcore configure -e agent.py
+# 7. Configure and deploy agent
+agentcore configure -e agent.py --region us-west-2
 agentcore launch
 
-# 9. Copy the agent ARN from output and add to .env
-echo "AGENTCORE_ARN=<your-agent-arn>" >> .env
-```
-
-### Enable Autonomous Operation (Optional)
-
-```bash
-# Redeploy with EventBridge Scheduler
-cd backend
-cdk deploy --context email=your-email@example.com \
-           --context agentcore_arn=<your-agent-arn> \
-           --context enable_scheduler=true
-
-# Regenerate .env to include scheduler info
-python generate_env.py
+# 8. Autonomous Self-Scheduling
+# Ask the agent to schedule itself via Chat UI or CLI
+# "Setup your daily schedule for 8 AM."
 ```
 
 ## CDK Commands
@@ -119,26 +127,19 @@ cdk deploy --context stack_name=my-newsletter \
 
 # List all stacks
 cdk list
-
-# Synthesize CloudFormation template
-cdk synth
 ```
 
-### Management
+### Secret Management
+
+The `configure_secret.py` script handles configuration updates without needing to redeploy code.
 
 ```bash
-# View stack outputs (use your actual stack name)
-aws cloudformation describe-stacks --stack-name aws-newsletter-v2-prod \
+# Update configuration (e.g. change email)
+python configure_secret.py --email new-email@example.com
+
+# View stack outputs
+aws cloudformation describe-stacks --stack-name aws-newsletter-prod \
     --query 'Stacks[0].Outputs' --output table
-
-# Regenerate .env from existing stack (project root)
-python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2
-
-# Regenerate .env with email for agent directory
-python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2 --email your-email@example.com --agent-dir
-
-# Destroy stack and all resources
-cdk destroy
 ```
 
 ## File Structure
@@ -146,10 +147,14 @@ cdk destroy
 ```
 backend/
 ├── app.py                  # CDK app entry point
-├── newsletter_stack.py     # Complete stack definition (276 lines)
-├── generate_env.py         # Generate .env from CloudFormation outputs
-├── cdk.json                # CDK configuration with feature flags
-├── requirements.txt        # Python dependencies (CDK + AgentCore alpha)
+├── newsletter_stack.py     # Complete stack definition
+├── configure_secret.py     # Updates Secrets Manager
+├── deploy_frontend.py      # Deploys Frontend to S3
+├── lambda/                 # Lambda functions
+│   ├── chat_proxy.py       # Secure Proxy with JWT Validation
+│   └── requirements.txt    # Dependencies (python-jose, requests)
+├── cdk.json                # CDK configuration
+├── requirements.txt        # Python dependencies
 └── README.md               # This file
 ```
 
@@ -167,232 +172,27 @@ Pass configuration via CDK context (command line or `cdk.json`):
 | `agentcore_arn` | No | None | Agent ARN (required for scheduler) |
 | `enable_scheduler` | No | `false` | Enable EventBridge Scheduler |
 
-### Environment File
-
-The `generate_env.py` script creates `.env` files for both the project root and agent directory:
-
-#### Basic Usage (Project Root)
-```bash
-python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2
-```
-
-#### Agent Directory with Email
-```bash
-python generate_env.py --stack-name aws-newsletter-v2-prod --region us-west-2 --email your-email@example.com --agent-dir
-```
-
-#### Generated .env File Contents
-```bash
-# AWS Configuration
-AWS_REGION=us-west-2
-AWS_ACCOUNT_ID=123456789012
-
-# Email Configuration
-NEWSLETTER_EMAIL=your-email@example.com
-
-# SNS Configuration
-SNS_TOPIC_ARN=arn:aws:sns:us-west-2:account:aws-newsletter-v2-newsletter-topic
-
-# AgentCore Memory Configuration
-BEDROCK_AGENTCORE_MEMORY_ID=aws_newsletter_v2_agent_memory-xyz
-BEDROCK_AGENTCORE_MEMORY_ARN=arn:aws:bedrock-agentcore:...
-
-# AgentCore Runtime Configuration
-AGENTCORE_RUNTIME_ROLE_ARN=arn:aws:iam::account:role/aws-newsletter-v2-agentcore-runtime-role
-
-# Agent Configuration (set after deployment)
-# AGENTCORE_ARN=arn:aws:bedrock-agentcore:...
-
-# Auto-included if EventBridge Scheduler enabled:
-EVENTBRIDGE_SCHEDULE_NAME=aws-newsletter-v2-daily-newsletter
-EVENTBRIDGE_ROLE_ARN=arn:aws:iam::account:role/...
-```
-
-#### Command Line Options
-| Option | Description |
-|--------|-------------|
-| `--stack-name` | CloudFormation stack name |
-| `--region` | AWS region |
-| `--email` | Newsletter email address (included in .env) |
-| `--agent-dir` | Place .env file in ../agent directory |
-| `--output` | Custom output file path |
-
 ## Stack Outputs
-
-CloudFormation outputs (accessible via `generate_env.py` or AWS Console):
 
 - `NewsletterTopicArn` - SNS topic ARN for email distribution
 - `MemoryId` - AgentCore Memory ID for agent configuration
-- `MemoryArn` - AgentCore Memory ARN
+- `AgentConfigSecretName` - Name of the Secret storing configuration
 - `AgentCoreRuntimeRoleArn` - IAM role for agent runtime
-- `EventBridgeScheduleName` - Schedule name (if enabled)
-- `EventBridgeRoleArn` - EventBridge IAM role (if enabled)
-
-## AgentCore Memory
-
-The stack creates AgentCore Memory with two strategies:
-
-### Semantic Strategy
-- **Name**: `newsletter_facts`
-- **Namespaces**: `/newsletter/facts`, `/newsletter/articles`
-- **Purpose**: Extract and store article metadata for deduplication
-
-### User Preference Strategy
-- **Name**: `user_prefs`
-- **Namespaces**: `/newsletter/preferences`, `/user/settings`
-- **Purpose**: Remember user preferences and settings
-
-### Event Expiry
-- Events automatically expire after **30 days**
-- Old articles disappear from deduplication tracking
-- Configurable via `expiration_duration` in stack
+- `CloudFrontUrl` - URL for the Chat UI
+- `ChatFunctionUrl` - Lambda Function URL endpoint
+- `UserPoolId` / `IdentityPoolId` - Cognito Auth IDs
 
 ## IAM Roles
 
 ### AgentCore Runtime Role
 Allows agent to:
 - `sns:Publish` to newsletter topic
-- `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`
+- `secretsmanager:GetSecretValue` for configuration
+- `logs:CreateLogGroup` etc. for logging
 
 ### EventBridge Role (if scheduler enabled)
 Allows EventBridge Scheduler to:
 - `bedrock-agentcore:InvokeAgentRuntime` on agent ARN
-
-## Cost Estimate
-
-### Monthly Costs (Estimated)
-
-| Service | Usage | Cost |
-|---------|-------|------|
-| SNS | 1,000 emails/day | Free tier |
-| SNS | 100,000 emails/day | ~$0.10/month |
-| AgentCore Memory | 30-day retention | ~$5-10/month |
-| EventBridge Scheduler | 1 daily invocation | Free tier |
-| AgentCore Runtime | 1 daily invocation | ~$0.01-0.05/month |
-
-**Total**: ~$5-10/month for most use cases
-
-### Cost Optimization Tips
-- Memory is the primary cost driver
-- Reduce `expiration_duration` if 30 days isn't needed
-- Free tier covers most newsletter scenarios
-- EventBridge Scheduler is free for basic scheduling
-
-## Troubleshooting
-
-### Common Issues
-
-#### 1. Memory not found error
-```bash
-# Wait 2-5 minutes after deployment for provisioning
-aws bedrock-agentcore list-memories --query 'memories[*].[id,state]'
-
-# Check memory state
-aws bedrock-agentcore get-memory --memory-id <memory-id>
-```
-
-#### 2. Email not delivered
-```bash
-# Check SNS subscription status
-aws sns list-subscriptions-by-topic --topic-arn <topic-arn>
-
-# Look for "PendingConfirmation" status
-# User must click confirmation link in email
-```
-
-#### 3. CDK bootstrap fails
-```bash
-# Ensure you have admin permissions
-aws sts get-caller-identity
-
-# Force re-bootstrap
-cdk bootstrap --force
-
-# Check CDK version
-cdk --version  # Should be >= 2.80.0
-```
-
-#### 4. Agent can't publish to SNS
-```bash
-# Verify agent is using the correct IAM role
-# Check role ARN in .env: AGENTCORE_RUNTIME_ROLE_ARN
-
-# Test SNS publish manually
-aws sns publish --topic-arn <topic-arn> --message "Test"
-```
-
-#### 5. EventBridge Scheduler not triggering
-```bash
-# Check schedule state
-aws scheduler get-schedule --name aws-newsletter-daily-newsletter
-
-# View schedule executions (CloudWatch Logs)
-aws logs tail /aws/bedrock-agentcore/runtimes/ --follow
-```
-
-## Production Considerations
-
-### Scaling
-- **SNS** scales automatically to millions of subscribers
-- **AgentCore Memory** handles concurrent agent requests
-- **EventBridge** reliable for daily scheduling (99.9% SLA)
-
-### Monitoring
-- CloudWatch Logs: `/aws/bedrock-agentcore/runtimes/`
-- CloudWatch Metrics: Monitor SNS publish failures
-- CloudWatch Alarms: Alert on agent execution failures
-
-### Security Best Practices
-- ✅ Use least-privilege IAM roles (implemented)
-- ✅ Enable CloudTrail for audit logging
-- ✅ Use AWS Secrets Manager for sensitive config (if needed)
-- ✅ Tag resources for cost allocation
-
-### High Availability
-- SNS and AgentCore are fully managed services (multi-AZ)
-- EventBridge Scheduler has automatic retries (3 attempts)
-- No single points of failure
-
-## Migration from SES
-
-If you need advanced email features:
-
-```python
-# Replace SNS with SES in agent tools
-# Benefits:
-# - HTML email templates
-# - Bounce/complaint handling
-# - Advanced analytics
-# - Higher sending limits (50k/day vs 200/day)
-```
-
-See `SES_MIGRATION_PLAN.md` in project root for details.
-
-## Related AWS Services
-
-- **Amazon Bedrock** - Foundation models for agent intelligence
-- **AWS Step Functions** - Orchestrate complex workflows
-- **Amazon EventBridge Pipes** - Connect event sources
-- **AWS CloudFormation** - Infrastructure state management
-
-## Development Workflow
-
-```bash
-# 1. Make changes to newsletter_stack.py
-vim newsletter_stack.py
-
-# 2. Preview changes
-cdk diff
-
-# 3. Deploy changes
-cdk deploy
-
-# 4. Regenerate .env if outputs changed
-python generate_env.py
-
-# 5. Test manually
-cd .. && python invoke_agent.py --prompt "Generate newsletter for yesterday"
-```
 
 ## Clean Up
 
@@ -400,19 +200,5 @@ cd .. && python invoke_agent.py --prompt "Generate newsletter for yesterday"
 # Destroy all infrastructure
 cdk destroy
 
-# Delete .env file (optional)
-rm ../.env
-
-# Remove CDK bootstrap (optional, affects all stacks in region)
-# aws cloudformation delete-stack --stack-name CDKToolkit
+# Secret deletion is usually immediate, but may have a recovery window
 ```
-
-## Support
-
-- **AWS CDK Docs**: https://docs.aws.amazon.com/cdk/
-- **Bedrock AgentCore**: https://docs.aws.amazon.com/bedrock/
-- **Project Issues**: https://github.com/your-org/aws-whats-new-alerts/issues
-
-## License
-
-MIT License - see LICENSE file for details.

@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS Newsletter Agent</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1456.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        /* Custom styles for Markdown content within bubbles */
+        .markdown-content ul { list-style-type: disc; padding-left: 1.5em; margin-top: 0.5em; margin-bottom: 0.5em; }
+        .markdown-content ol { list-style-type: decimal; padding-left: 1.5em; margin-top: 0.5em; margin-bottom: 0.5em; }
+        .markdown-content li { margin-bottom: 0.25em; }
+        .markdown-content p { margin-bottom: 0.75em; }
+        .markdown-content p:last-child { margin-bottom: 0; }
+        .markdown-content strong { font-weight: 600; }
+        .markdown-content a { color: #2563eb; text-decoration: underline; }
+        .markdown-content pre { background-color: #1e293b; color: #e2e8f0; padding: 0.75rem; border-radius: 0.375rem; overflow-x: auto; font-size: 0.875rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        .markdown-content code { background-color: rgba(0,0,0,0.1); padding: 0.1rem 0.25rem; border-radius: 0.25rem; font-size: 0.875em; font-family: monospace; }
+        
+        /* Dark mode overrides for user bubbles if needed */
+        .bg-blue-600 .markdown-content code { background-color: rgba(255,255,255,0.2); color: white; }
+        .bg-blue-600 .markdown-content a { color: white; }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col">
+
+    <!-- Login Modal -->
+    <div id="login-screen" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-96">
+            <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Sign In</h2>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Email</label>
+                    <input type="email" id="email" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Password</label>
+                    <input type="password" id="password" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition duration-200">Sign In</button>
+            </form>
+            <div id="login-error" class="mt-4 text-red-500 text-sm text-center hidden"></div>
+            <p class="mt-4 text-center text-sm text-gray-600">
+                No account? <a href="#" id="toggle-signup" class="text-blue-500 hover:underline">Sign Up</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- Signup Modal (Hidden by default) -->
+    <div id="signup-screen" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-96">
+            <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Sign Up</h2>
+            <form id="signup-form" class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Email</label>
+                    <input type="email" id="signup-email" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Password</label>
+                    <input type="password" id="signup-password" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <button type="submit" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition duration-200">Create Account</button>
+            </form>
+            <div id="signup-error" class="mt-4 text-red-500 text-sm text-center hidden"></div>
+            <p class="mt-4 text-center text-sm text-gray-600">
+                <a href="#" id="toggle-login" class="text-blue-500 hover:underline">Back to Sign In</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- Verification Modal (Hidden by default) -->
+    <div id="verify-screen" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-96">
+            <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Verify Email</h2>
+            <p class="mb-4 text-gray-600 text-sm">Check your email for a verification code.</p>
+            <form id="verify-form" class="space-y-4">
+                <input type="hidden" id="verify-email-hidden">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Code</label>
+                    <input type="text" id="verify-code" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition duration-200">Verify</button>
+            </form>
+            <div id="verify-error" class="mt-4 text-red-500 text-sm text-center hidden"></div>
+        </div>
+    </div>
+
+    <!-- Main Chat Interface (Hidden by default) -->
+    <div id="app-interface" class="flex flex-col h-screen hidden bg-slate-50">
+        <header class="bg-slate-900 shadow-md p-4">
+            <div class="max-w-5xl mx-auto flex justify-between items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold shadow-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold text-white tracking-tight">AWS Newsletter Agent</h1>
+                        <p class="text-xs text-slate-400 font-medium">Powered by Amazon Bedrock AgentCore</p>
+                    </div>
+                </div>
+                <button id="logout-btn" class="text-slate-300 hover:text-white text-sm font-medium transition-colors duration-200 flex items-center space-x-1">
+                    <span>Sign Out</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <main id="chat-container" class="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
+            <div class="max-w-5xl mx-auto w-full space-y-6">
+                <!-- Welcome Message -->
+                <div class="flex justify-start">
+                    <div class="flex space-x-3 max-w-3xl">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                            <span class="text-blue-600 text-xs font-bold">AI</span>
+                        </div>
+                        <div class="bg-white p-5 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-slate-800 leading-relaxed">
+                            <p class="font-medium mb-2">Hello! I'm your AWS Newsletter Agent.</p>
+                            <p class="text-slate-600">I can generate newsletters, summarize recent announcements, or schedule daily updates for you.</p>
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <button onclick="fillInput('Generate newsletter for yesterday')" class="text-xs bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-full border border-slate-200 transition-colors">Generate newsletter for yesterday</button>
+                                <button onclick="fillInput('Schedule daily updates at 9am')" class="text-xs bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-full border border-slate-200 transition-colors">Schedule daily updates</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Messages will be injected here -->
+            </div>
+        </main>
+
+        <footer class="p-6 bg-white border-t border-slate-200 shadow-lg z-10">
+            <div class="max-w-5xl mx-auto w-full">
+                <form id="chat-form" class="relative flex items-center shadow-sm rounded-full ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-blue-500 transition-all duration-200">
+                    <input type="text" id="user-input" class="flex-1 px-6 py-4 bg-transparent border-none focus:ring-0 text-slate-800 placeholder-slate-400" placeholder="Ask about AWS news or request a newsletter..." autocomplete="off">
+                    <button type="submit" class="absolute right-2 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition duration-200 shadow-md flex items-center justify-center w-10 h-10">
+                        <span id="send-text">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transform rotate-90" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                            </svg>
+                        </span>
+                        <svg id="loading-spinner" class="animate-spin h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </button>
+                </form>
+                <p class="text-center text-xs text-slate-400 mt-3">AI responses may vary. Verify important information.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Configuration Placeholder (Will be replaced by deployment script) -->
+    <script src="config.js"></script>
+
+    <!-- App Logic -->
+    <script>
+        // Configure AWS Region
+        AWS.config.region = 'us-west-2'; // Will be overwritten by window.awsConfig.region if needed
+
+        // DOM Elements
+        const loginScreen = document.getElementById('login-screen');
+        const signupScreen = document.getElementById('signup-screen');
+        const verifyScreen = document.getElementById('verify-screen');
+        const loginForm = document.getElementById('login-form');
+        const signupForm = document.getElementById('signup-form');
+        const verifyForm = document.getElementById('verify-form');
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+        const chatContainer = document.getElementById('chat-container');
+        const logoutBtn = document.getElementById('logout-btn');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const sendText = document.getElementById('send-text');
+
+        // State
+        let bedrockClient = null;
+        let sessionId = 'session-' + Math.random().toString(36).substring(2, 15);
+        let accessToken = localStorage.getItem('chatAccessToken');
+
+        // Check for existing session
+        if (accessToken) {
+            showChatInterface();
+        } else {
+            loginScreen.classList.remove('hidden');
+        }
+
+        function showChatInterface() {
+            loginScreen.classList.add('hidden');
+            signupScreen.classList.add('hidden');
+            verifyScreen.classList.add('hidden');
+            document.getElementById('app-interface').classList.remove('hidden');
+        }
+
+        // --- Authentication Logic ---
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('login-error');
+
+            try {
+                const cognito = new AWS.CognitoIdentityServiceProvider({ region: window.awsConfig.region });
+                
+                const params = {
+                    AuthFlow: "USER_PASSWORD_AUTH",
+                    ClientId: window.awsConfig.userPoolClientId,
+                    AuthParameters: {
+                        USERNAME: email,
+                        PASSWORD: password
+                    }
+                };
+
+                const response = await cognito.initiateAuth(params).promise();
+                accessToken = response.AuthenticationResult.IdToken;
+                localStorage.setItem('chatAccessToken', accessToken);
+
+                errorDiv.classList.add('hidden');
+                showChatInterface();
+            } catch (err) {
+                console.error(err);
+                errorDiv.textContent = err.message || "Login failed";
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        async function handleSignup(e) {
+            e.preventDefault();
+            const email = document.getElementById('signup-email').value;
+            const password = document.getElementById('signup-password').value;
+            const errorDiv = document.getElementById('signup-error');
+
+            try {
+                const cognito = new AWS.CognitoIdentityServiceProvider({ region: window.awsConfig.region });
+                
+                const params = {
+                    ClientId: window.awsConfig.userPoolClientId,
+                    Username: email,
+                    Password: password,
+                    UserAttributes: [{ Name: "email", Value: email }]
+                };
+
+                await cognito.signUp(params).promise();
+                
+                // Switch to verify screen
+                document.getElementById('verify-email-hidden').value = email;
+                signupScreen.classList.add('hidden');
+                verifyScreen.classList.remove('hidden');
+            } catch (err) {
+                console.error(err);
+                errorDiv.textContent = err.message || "Signup failed";
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        async function handleVerify(e) {
+            e.preventDefault();
+            const email = document.getElementById('verify-email-hidden').value;
+            const code = document.getElementById('verify-code').value;
+            const errorDiv = document.getElementById('verify-error');
+
+            try {
+                const cognito = new AWS.CognitoIdentityServiceProvider({ region: window.awsConfig.region });
+                
+                const params = {
+                    ClientId: window.awsConfig.userPoolClientId,
+                    Username: email,
+                    ConfirmationCode: code
+                };
+
+                await cognito.confirmSignUp(params).promise();
+                
+                alert("Verification successful! Please sign in.");
+                verifyScreen.classList.add('hidden');
+                loginScreen.classList.remove('hidden');
+            } catch (err) {
+                console.error(err);
+                errorDiv.textContent = err.message || "Verification failed";
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        async function handleSendMessage(e) {
+            e.preventDefault();
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            // Add user message
+            addMessage(message, 'user');
+            userInput.value = '';
+            setLoading(true);
+
+            try {
+                // Call Proxy API (Function URL or API Gateway)
+                // Remove /chat suffix as Function URL is direct, and API Gateway URL in config might need adjustment if we mix them.
+                // But for Function URL, we just use the URL directly.
+                // If it was API Gateway, we needed /chat.
+                // Let's assume apiUrl is the FULL endpoint to call.
+                const endpoint = window.awsConfig.apiUrl.endsWith('/') ? window.awsConfig.apiUrl : window.awsConfig.apiUrl + '/';
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': accessToken
+                    },
+                    body: JSON.stringify({
+                        prompt: message,
+                        sessionId: sessionId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    addMessage('Error: ' + data.error, 'system');
+                } else {
+                    // If the agent returns markdown, we should render it.
+                    // I'll just dump text for now.
+                    const text = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+                    addMessage(text, 'ai');
+                }
+
+            } catch (err) {
+                console.error(err);
+                addMessage("Error: " + err.message, 'system');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function fillInput(text) {
+            userInput.value = text;
+            userInput.focus();
+        }
+
+        function addMessage(text, sender) {
+            // Find container to append to (inner container)
+            const messagesContainer = chatContainer.querySelector('.max-w-5xl');
+            
+            const wrapperDiv = document.createElement('div');
+            wrapperDiv.className = `flex ${sender === 'user' ? 'justify-end' : 'justify-start'}`;
+            
+            // Inner content wrapper
+            const contentWrapper = document.createElement('div');
+            contentWrapper.className = `flex space-x-3 max-w-3xl ${sender === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`;
+
+            // Avatar
+            const avatar = document.createElement('div');
+            avatar.className = `flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                sender === 'user' ? 'bg-blue-600' : 'bg-blue-100'
+            }`;
+            
+            if (sender === 'user') {
+                avatar.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" /></svg>`;
+            } else if (sender === 'system') {
+                 avatar.className = 'flex-shrink-0 w-8 h-8 rounded-full bg-red-100 flex items-center justify-center';
+                 avatar.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>`;
+            } else {
+                avatar.innerHTML = `<span class="text-blue-600 text-xs font-bold">AI</span>`;
+            }
+
+            // Bubble
+            const bubble = document.createElement('div');
+            bubble.className = `p-5 rounded-2xl shadow-sm leading-relaxed markdown-content ${
+                sender === 'user' 
+                ? 'bg-blue-600 text-white rounded-tr-none' 
+                : sender === 'system'
+                    ? 'bg-red-50 text-red-800 border border-red-100 rounded-tl-none'
+                    : 'bg-white text-slate-800 border border-slate-100 rounded-tl-none'
+            }`;
+            
+            // Formatting using Marked.js for robust Markdown rendering
+            // Handle literal \n escapes from JSON string
+            let cleanText = text.replace(/\\n/g, '\n');
+            
+            // Configure Marked to treat newlines as breaks (like GitHub comments)
+            if (typeof marked !== 'undefined') {
+                marked.setOptions({
+                    breaks: true,
+                    gfm: true
+                });
+                try {
+                    bubble.innerHTML = marked.parse(cleanText);
+                } catch (e) {
+                    console.error("Markdown parsing failed", e);
+                    bubble.textContent = cleanText;
+                }
+            } else {
+                // Fallback if marked fails to load
+                bubble.textContent = cleanText;
+            }
+            
+            contentWrapper.appendChild(avatar);
+            contentWrapper.appendChild(bubble);
+            wrapperDiv.appendChild(contentWrapper);
+            
+            messagesContainer.appendChild(wrapperDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function setLoading(isLoading) {
+            if (isLoading) {
+                sendText.classList.add('hidden');
+                loadingSpinner.classList.remove('hidden');
+                userInput.disabled = true;
+            } else {
+                sendText.classList.remove('hidden');
+                loadingSpinner.classList.add('hidden');
+                userInput.disabled = false;
+                userInput.focus();
+            }
+        }
+
+        // --- Event Listeners ---
+        
+        loginForm.addEventListener('submit', handleLogin);
+        signupForm.addEventListener('submit', handleSignup);
+        verifyForm.addEventListener('submit', handleVerify);
+        chatForm.addEventListener('submit', handleSendMessage);
+        
+        document.getElementById('toggle-signup').addEventListener('click', (e) => {
+            e.preventDefault();
+            loginScreen.classList.add('hidden');
+            signupScreen.classList.remove('hidden');
+        });
+        
+        document.getElementById('toggle-login').addEventListener('click', (e) => {
+            e.preventDefault();
+            signupScreen.classList.add('hidden');
+            loginScreen.classList.remove('hidden');
+        });
+
+        logoutBtn.addEventListener('click', () => {
+            localStorage.removeItem('chatAccessToken');
+            location.reload();
+        });
+
+    </script>
+</body>
+</html>

@@ -6,11 +6,15 @@ Built with AWS Bedrock AgentCore, Strands AI framework, and CDK Infrastructure a
 
 ## 🎯 What This Does
 
-- 🤖 **Fully Autonomous** - Runs daily at 6 AM EST via EventBridge Scheduler
+- 🤖 **Fully Autonomous** - Runs daily via EventBridge Scheduler
 - 🔍 **Smart Filtering** - Focuses on AI/ML announcements (Bedrock, SageMaker, Claude, AgentCore)
 - 🧠 **Semantic Memory** - Remembers processed articles, prevents duplicates (30-day expiry)
 - 📧 **Professional Formatting** - ASCII-bordered newsletters with ranked announcements
 - 📨 **Email Delivery** - Delivers via Amazon SNS to subscribers
+- 💬 **Web Chat UI** - Clean, authenticated web interface to chat with the agent (Markdown supported)
+- 🔒 **Secure Configuration** - Uses AWS Secrets Manager for zero-touch deployment
+- ⚡ **Robust Architecture** - Uses Lambda Function URL to handle long-running generation tasks (5 min timeout support)
+- 🛡️ **Bank-Grade Security** - Chat Proxy validates Cognito JWTs, blocking unauthorized access
 
 ## 🚀 Quick Start
 
@@ -18,87 +22,68 @@ Built with AWS Bedrock AgentCore, Strands AI framework, and CDK Infrastructure a
 - AWS Account with Bedrock AgentCore access
 - Python 3.10+ in virtual environment: `source .venv/bin/activate`
 - AWS CDK CLI: `npm install -g aws-cdk`
+- Docker Desktop (required for bundling Lambda dependencies)
 
-### 1. Deploy Infrastructure (5 minutes)
+### 1. Deploy Infrastructure (5-10 minutes)
 ```bash
 cd backend
 
 # Bootstrap CDK (first time only per account/region)
 cdk bootstrap
 
-# Deploy SNS + Memory + IAM roles
+# Deploy all resources (Backend + Frontend)
+# This will use Docker to bundle secure dependencies
 cdk deploy --context email=your-email@example.com
-
-# Generate .env from stack outputs
-python generate_env.py
-
-# ⏱️ Wait 2-5 minutes for AgentCore Memory to provision
+# ⏱️ Wait for deployment to complete
 ```
 
-**Creates:** SNS Topic, AgentCore Memory (semantic deduplication), IAM roles
+**Creates:** SNS Topic, AgentCore Memory, IAM roles, Secrets Manager, **Cognito Auth**, **CloudFront/S3 Hosting**, and **Secure Lambda Function URL** for chat proxy.
 
-### 2. Test Agent Locally (Optional but Recommended)
+### 2. Configure Agent Secrets
+Push configuration securely to AWS Secrets Manager:
+
 ```bash
-cd ../agent
-
-# Run agent locally
-python agent.py --port 8080
-
-# In another terminal, test it
-cd ..
-python local_chat_client.py
+python configure_secret.py --email your-email@example.com
 ```
 
-This lets you iterate quickly without deploying to AgentCore.
+>NOTE: You will need to get the AGENTCORE_RUNTIME_ROLE_ARN from .env and use it when you launch the agent. This contains all the permissions for your agent.
 
 ### 3. Deploy Agent (2 minutes)
 ```bash
-cd agent
+cd ../agent
 
-# Configure agent
+# Configure agent (builds the artifact)
 agentcore configure -e agent.py --region us-west-2
 
 # Launch to AWS
 agentcore launch
-
-# Copy the agent ARN from output
 ```
 
-**Agent Configuration:**
-- Name: `newsletter_agent`
-- Execution Role: Use `AGENTCORE_RUNTIME_ROLE_ARN` from `.env`
-- Region: Must match your CDK deployment
+### 4. Deploy Frontend (1 minute)
+Generates config and uploads the Chat UI to S3.
 
-**Add agent ARN to .env:**
+```bash
+cd ../backend
+python deploy_frontend.py
+```
+Open the printed CloudFront URL to chat with your agent!
+
+### 5. Autonomous Self-Scheduling (The "Magic" Step)
+Ask the agent to set up its own schedule via the chat interface or CLI. It will discover its own ARN and configure EventBridge autonomously.
+
+**Via CLI:**
 ```bash
 cd ..
-# Edit .env and add:
-# AGENTCORE_ARN=arn:aws:bedrock-agentcore:region:account:runtime/id
+python invoke_agent.py --prompt "Setup your daily schedule for 8 AM"
 ```
 
-### 4. Test Manually
-```bash
-python invoke_agent.py --prompt "Generate daily AWS AI/ML newsletter for the last 24 hours"
-```
+**Via Web UI:**
+Just type: "Set up daily newsletter delivery at 8 AM"
 
-Check your email! Newsletter arrives in ~15 seconds.
-
-⚠️ **CRITICAL**: Click SNS subscription confirmation link in your email first, or emails will silently fail.
-
-### 5. Enable Autonomous Operation (Optional)
-```bash
-cd backend
-
-# Deploy EventBridge Scheduler for daily execution
-cdk deploy --context email=your-email@example.com \
-           --context agentcore_arn=$(grep AGENTCORE_ARN ../.env | cut -d'=' -f2) \
-           --context enable_scheduler=true
-
-# Regenerate .env to include scheduler config
-python generate_env.py
-```
-
-**Adds:** EventBridge Scheduler (6 AM EST daily), IAM role, SQS Dead Letter Queue
+The agent will:
+1. Autonomously discover its own Agent ID (`find_agent_id` tool)
+2. Create the EventBridge schedule (`manage_eventbridge_schedule` tool)
+3. Confirm the schedule is active
 
 ---
 
@@ -107,18 +92,24 @@ python generate_env.py
 ```
 aws-whats-new-alerts/
 ├── agent/                         # AI Agent
-│   ├── agent.py                   # Main agent (memory + newsletter logic)
-│   ├── tools/                     # Custom tools (auto-loaded)
-│   │   └── sns_tools.py          # SNS publish/subscribe
+│   ├── agent.py                   # Main agent (loads config from Secrets Manager)
+│   ├── secrets_loader.py          # Helper to fetch secrets
+│   ├── tools/                     # Custom tools
+│   │   └── sns_tools.py           # SNS publish/subscribe
 │   └── requirements.txt
 ├── backend/                       # CDK Infrastructure
 │   ├── app.py                     # CDK entry point
-│   ├── newsletter_stack.py        # Complete stack (SNS + Memory + EventBridge + DLQ)
-│   ├── generate_env.py            # Auto-generate .env from CloudFormation
-│   └── requirements.txt
+│   ├── newsletter_stack.py        # Complete stack (SNS + Memory + Secrets + Frontend + Lambda)
+│   ├── configure_secret.py        # Config script (pushes to Secrets Manager)
+│   ├── deploy_frontend.py         # Deploys Chat UI to S3 & Invalidates CloudFront
+│   └── lambda/                    # Lambda Functions
+│       ├── chat_proxy.py          # Secure Proxy (Validates JWT, handles timeout)
+│       └── requirements.txt       # Proxy dependencies (python-jose, requests)
+├── frontend/                      # Web Chat UI
+│   ├── index.html                 # Single-page chat app (Tailwind + Markdown + Cognito)
+│   └── config.js                  # Generated config
 ├── invoke_agent.py                # Manual testing script
-├── local_chat_client.py           # Local development client
-└── .env                           # Auto-generated config
+└── requirements.txt
 ```
 
 ---
@@ -135,58 +126,29 @@ Agent responds to natural language:
 - `"yesterday"` / `"last 3 days"`
 - `"last week"` / `"last month"`
 
-### Schedule
-**Default**: 6 AM EST (11 AM UTC) daily
-
-**Change**: Edit `backend/newsletter_stack.py` line 244:
-```python
-schedule_expression="cron(0 11 * * ? *)"  # 6 AM EST
-```
-
 ---
 
 ## 🧪 Testing & Debugging
-
-### Local Testing (Fast Iteration)
-```bash
-# Terminal 1: Run agent locally
-cd agent && python agent.py --port 8080
-
-# Terminal 2: Test with client
-python local_chat_client.py
-```
 
 ### Manual Invocation
 ```bash
 # Test deployed agent
 python invoke_agent.py --prompt "Generate newsletter for yesterday"
-
-# Interactive conversation mode
-python invoke_agent.py
 ```
 
 ### CloudWatch Logs
 ```bash
 # Tail agent runtime logs
 aws logs tail /aws/bedrock-agentcore/runtimes/ --follow --region us-west-2
-
-# Search for errors
-aws logs filter-log-events \
-    --log-group-name /aws/bedrock-agentcore/runtimes/ \
-    --filter-pattern "ERROR" \
-    --region us-west-2
-
-# Check EventBridge Scheduler failures
-aws sqs receive-message \
-    --queue-url $(grep SCHEDULER_DLQ_URL .env | cut -d'=' -f2) \
-    --region us-west-2
 ```
 
-### Memory Validation
+### Secret Management
+To update configuration (e.g., change email or region), simply run the config script again:
 ```bash
-cd validation
-python validate_memory.py --memory-id $(grep MEMORY_ID ../.env | cut -d'=' -f2)
+cd backend
+python configure_secret.py --email new-email@example.com
 ```
+No need to redeploy the agent code for configuration changes!
 
 ---
 
@@ -199,33 +161,16 @@ python validate_memory.py --memory-id $(grep MEMORY_ID ../.env | cut -d'=' -f2)
 5. **Memory automatically extracts** article URLs/dates from agent response for future deduplication
 6. **Events expire after 30 days** (automatic cleanup)
 
-**Memory Namespaces:**
-- `/newsletter/facts` - Semantic extraction of article metadata
-- `/newsletter/articles` - Additional article storage
-- `/newsletter/preferences` - User preferences
-
 ---
 
 ## 🛠️ Common Operations
 
-### Update Agent
+### Update Agent Code
 ```bash
 cd agent
 # Edit agent.py
-agentcore update
-```
-
-### View Stack Outputs
-```bash
-cd backend
-aws cloudformation describe-stacks --stack-name aws-newsletter-prod \
-    --query 'Stacks[0].Outputs' --output table --region us-west-2
-```
-
-### Regenerate .env
-```bash
-cd backend
-python generate_env.py --region us-west-2
+agentcore configure -e agent.py
+agentcore update # or agentcore deploy --rebuild
 ```
 
 ### Destroy Everything
@@ -233,77 +178,3 @@ python generate_env.py --region us-west-2
 cd backend
 cdk destroy
 ```
-
----
-
-## 🚨 Troubleshooting
-
-### No emails received
-1. ✅ Check SNS subscription confirmed (click email link)
-2. ✅ Check spam folder
-3. ✅ Verify SNS_TOPIC_ARN in `.env` matches stack output
-4. ✅ Check CloudWatch logs for errors
-
-### "Memory not found" error
-- Wait 5 minutes after `cdk deploy` for memory provisioning
-- Verify `BEDROCK_AGENTCORE_MEMORY_ID` in `.env`
-
-### Region mismatch errors
-- All services must be in same region (CDK, agent, memory)
-- Default is `us-west-2` - check `.env` AWS_REGION
-- Regenerate `.env` if you deployed to different region
-
-### EventBridge not triggering
-- Check schedule is `ENABLED` in EventBridge console
-- Verify `AGENTCORE_ARN` was provided during scheduler deployment
-- Check Dead Letter Queue for failures
-
-### Duplicate articles in newsletter
-- Memory takes 24-48 hours to fully index after first run
-- Check memory validation: `cd validation && python validate_memory.py`
-
----
-
-## 📝 Environment Variables
-
-Auto-generated by `backend/generate_env.py` from CloudFormation outputs:
-
-```bash
-AWS_REGION=us-west-2                        # Deployment region
-AWS_ACCOUNT_ID=123456789012                 # Your AWS account
-SNS_TOPIC_ARN=arn:aws:sns:...              # Email delivery
-BEDROCK_AGENTCORE_MEMORY_ID=memory-id      # Deduplication
-BEDROCK_AGENTCORE_MEMORY_ARN=arn:aws:...   # Memory ARN
-AGENTCORE_RUNTIME_ROLE_ARN=arn:aws:iam:... # Runtime permissions
-AGENTCORE_ARN=arn:aws:bedrock-agentcore:...# Agent runtime (add manually)
-
-# EventBridge Scheduler (optional, added if enabled)
-EVENTBRIDGE_SCHEDULE_NAME=aws-newsletter-daily-newsletter
-EVENTBRIDGE_ROLE_ARN=arn:aws:iam:...
-SCHEDULER_DLQ_ARN=arn:aws:sqs:...          # Dead letter queue
-SCHEDULER_DLQ_URL=https://sqs...            # DLQ URL
-
-# Agent Identity (for persistent memory sessions)
-AGENT_ACTOR_ID=aws-newsletter-bot
-AGENT_SESSION_ID=aws-newsletter-main-session
-```
-
----
-
-## 📚 Technical Details
-
-### Stack Components
-- **SNS Topic**: Email delivery to subscribers
-- **AgentCore Memory**: 30-day semantic memory with custom extraction
-- **S3 Bucket**: Newsletter archive storage (lifecycle: 90d→IA, 365d→Glacier)
-- **IAM Roles**: Least-privilege access (AgentCore→SNS, EventBridge→AgentCore)
-- **EventBridge Scheduler**: Daily cron trigger with retry policy
-- **SQS DLQ**: Captures failed scheduler invocations (14-day retention)
-
-### Dependencies
-- `aws-cdk-lib>=2.80.0` - CDK framework
-- `aws-cdk.aws-bedrock-agentcore-alpha` - AgentCore constructs (alpha)
-- `strands-agents` - AI agent framework
-- `boto3` - AWS SDK
-
-For detailed technical documentation, see [CLAUDE.md](CLAUDE.md).

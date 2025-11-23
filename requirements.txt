@@ -1,0 +1,18 @@
+# CDK requirements
+aws-cdk-lib
+aws-cdk.aws-bedrock-agentcore-alpha
+constructs
+
+# AWS SDK (for generate_env.py script)
+boto3
+
+# Utility requirements
+python-dotenv
+
+# Strands requirements
+strands-agents 
+strands-agents-tools
+strands-agents[otel]
+langfuse
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit

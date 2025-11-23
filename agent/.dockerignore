@@ -15,6 +15,7 @@ __pycache__*
 # Virtual environments
 .venv/
 .env
+agent_config.env
 venv/
 env/
 ENV/
