@@ -46,8 +46,8 @@ EventBridge Scheduler ────────→ Bedrock AgentCore Runtime
 9. **CloudFront** - HTTPS content delivery
 
 ### Optional Resources
-10. **EventBridge Scheduler** - Daily trigger at 6 AM EST (11 AM UTC)
-11. **EventBridge Role** - IAM role to invoke AgentCore Runtime
+10. **EventBridge Scheduler Role** - IAM role allowing the Agent to create/manage its own schedule (Autonomous Scheduling)
+11. **EventBridge Scheduler DLQ** - Dead Letter Queue for failed schedule invocations
 
 ## Quick Start
 
@@ -169,8 +169,7 @@ Pass configuration via CDK context (command line or `cdk.json`):
 | `email` | No | None | Email to subscribe to newsletter |
 | `stack_name` | No | `aws-newsletter` | Stack name prefix |
 | `region` | No | `us-west-2` | AWS region |
-| `agentcore_arn` | No | None | Agent ARN (required for scheduler) |
-| `enable_scheduler` | No | `false` | Enable EventBridge Scheduler |
+| `enable_scheduler` | No | `false` | Enable *Static* EventBridge Scheduler (Legacy) |
 
 ## Stack Outputs
 

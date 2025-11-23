@@ -95,6 +95,8 @@ aws-whats-new-alerts/
 │   ├── agent.py                   # Main agent (loads config from Secrets Manager)
 │   ├── secrets_loader.py          # Helper to fetch secrets
 │   ├── tools/                     # Custom tools
+│   │   ├── aws_news_tools.py      # AWS RSS feed parser
+│   │   ├── create_events.py       # EventBridge Scheduler management (Self-Scheduling)
 │   │   └── sns_tools.py           # SNS publish/subscribe
 │   └── requirements.txt
 ├── backend/                       # CDK Infrastructure

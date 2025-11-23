@@ -114,10 +114,10 @@ agent/
 ├── README.md                   # This file
 ├── requirements.txt            # Python dependencies
 ├── tools/                      # Custom tools (auto-loaded)
-│   └── sns_tools.py           # SNS publish/subscribe tools
-│   └── create_events.py       # EventBridge scheduling tools
-│   └── aws_news_tools.py      # AWS news fetching tools
-└── .bedrock_agentcore/        # AgentCore deployment config
+│   ├── aws_news_tools.py       # AWS news fetching tools
+│   ├── create_events.py        # EventBridge scheduling tools
+│   └── sns_tools.py            # SNS publish/subscribe tools
+└── .bedrock_agentcore/         # AgentCore deployment config
 ```
 
 ## Troubleshooting
