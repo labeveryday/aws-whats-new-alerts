@@ -11,10 +11,111 @@ Built with AWS Bedrock AgentCore, Strands AI framework, and CDK Infrastructure a
 - 🧠 **Semantic Memory** - Remembers processed articles, prevents duplicates (30-day expiry)
 - 📧 **Professional Formatting** - ASCII-bordered newsletters with ranked announcements
 - 📨 **Email Delivery** - Delivers via Amazon SNS to subscribers
-- 💬 **Web Chat UI** - Clean, authenticated web interface to chat with the agent (Markdown supported)
-- 🔒 **Secure Configuration** - Uses AWS Secrets Manager for zero-touch deployment
-- ⚡ **Robust Architecture** - Uses Lambda Function URL to handle long-running generation tasks (5 min timeout support)
-- 🛡️ **Bank-Grade Security** - Chat Proxy validates Cognito JWTs, blocking unauthorized access
+- 💬 **Web Chat UI** - Clean, authenticated web interface with **Real-time Streaming** and **Tool Call Visualization**
+- 🔒 **Secure Architecture** - Serverless frontend (S3/CloudFront) with direct AWS SDK v3 streaming (No API Gateway timeout)
+- 🛡️ **Bank-Grade Security** - Cognito Authentication + Identity Pools for secure, direct agent access
+
+## 🏗️ Architecture
+
+The system uses a modern **Streaming Architecture** to bypass API Gateway timeouts and provide a responsive user experience.
+
+```mermaid
+flowchart TB
+    subgraph User["👤 User Interface"]
+        Browser["Web Browser<br/>(Chat UI)"]
+    end
+
+    subgraph Frontend["🌐 Frontend Layer (S3 + CloudFront)"]
+        S3["S3 Bucket<br/>index.html + config.js"]
+        CF["CloudFront<br/>HTTPS Distribution"]
+    end
+
+    subgraph Auth["🔐 Authentication (Cognito)"]
+        UserPool["User Pool<br/>Email/Password Auth"]
+        IdentityPool["Identity Pool<br/>Temp AWS Credentials"]
+    end
+
+    subgraph Runtime["🤖 Agent Runtime Layer"]
+        SDK["AWS SDK v3<br/>Bedrock AgentCore Client"]
+        AgentRuntime["AgentCore Runtime<br/>(Streaming)"]
+        StrandsAgent["Strands AI Agent<br/>+ Custom Tools"]
+    end
+
+    subgraph Resources["📦 AWS Resources"]
+        Memory["AgentCore Memory<br/>(30-day TTL)"]
+        Secrets["Secrets Manager<br/>(Config)"]
+        SNS["SNS Topic<br/>(Email Delivery)"]
+        Scheduler["EventBridge Scheduler<br/>(Daily Trigger)"]
+        DLQ["SQS DLQ<br/>(Failed Invocations)"]
+    end
+
+    subgraph External["🌍 External Services"]
+        AWSRSS["AWS What's New<br/>RSS Feed"]
+        Subscribers["📧 Email Subscribers"]
+    end
+
+    %% User Flow
+    Browser -->|HTTPS| CF
+    CF --> S3
+    Browser -->|Sign In/Up| UserPool
+    UserPool -->|Authenticated| IdentityPool
+
+    %% Streaming Flow
+    IdentityPool -->|Temp IAM Creds| SDK
+    SDK -->|InvokeAgentRuntime<br/>Streaming SSE| AgentRuntime
+    AgentRuntime -->|Execute| StrandsAgent
+
+    %% Agent Resources
+    StrandsAgent -->|Semantic Search| Memory
+    StrandsAgent -->|Load Config| Secrets
+    StrandsAgent -->|Publish Newsletter| SNS
+    StrandsAgent -->|Create/Update| Scheduler
+    StrandsAgent -->|Fetch News| AWSRSS
+
+    %% Delivery & Scheduling
+    SNS -->|Email| Subscribers
+    Scheduler -->|Daily 8 AM| AgentRuntime
+    Scheduler -.->|On Failure| DLQ
+
+    %% Styling
+    classDef frontend fill:#3b82f6,stroke:#1e40af,color:#fff
+    classDef auth fill:#8b5cf6,stroke:#6d28d9,color:#fff
+    classDef runtime fill:#10b981,stroke:#059669,color:#fff
+    classDef resources fill:#f59e0b,stroke:#d97706,color:#fff
+    classDef external fill:#6b7280,stroke:#4b5563,color:#fff
+
+    class S3,CF frontend
+    class UserPool,IdentityPool auth
+    class SDK,AgentRuntime,StrandsAgent runtime
+    class Memory,Secrets,SNS,Scheduler,DLQ resources
+    class AWSRSS,Subscribers external
+```
+
+### Key Architecture Highlights
+
+**🔒 Security**
+- Cognito authentication with email verification
+- IAM least privilege (scoped to account + region)
+- No API Gateway or Lambda (eliminates attack surface)
+- Temporary credentials via Identity Pool
+
+**⚡ Performance**
+- Direct browser → AgentCore streaming (no proxies)
+- Real-time token streaming with tool visualization
+- No cold starts (no Lambda)
+- CloudFront edge caching for frontend assets
+
+**🧠 Intelligence**
+- Semantic memory prevents duplicate articles
+- Self-discovery pattern (agent finds its own ARN)
+- Autonomous scheduling (agent manages EventBridge)
+- Tool call transparency (visible in chat UI)
+
+**📧 Delivery**
+- SNS email distribution to subscribers
+- ASCII-bordered professional newsletters
+- AI/ML focused content filtering
+- Daily automated execution
 
 ## 🚀 Quick Start
 
@@ -22,7 +123,6 @@ Built with AWS Bedrock AgentCore, Strands AI framework, and CDK Infrastructure a
 - AWS Account with Bedrock AgentCore access
 - Python 3.10+ in virtual environment: `source .venv/bin/activate`
 - AWS CDK CLI: `npm install -g aws-cdk`
-- Docker Desktop (required for bundling Lambda dependencies)
 
 ### 1. Deploy Infrastructure (5-10 minutes)
 ```bash
@@ -32,12 +132,11 @@ cd backend
 cdk bootstrap
 
 # Deploy all resources (Backend + Frontend)
-# This will use Docker to bundle secure dependencies
 cdk deploy --context email=your-email@example.com
 # ⏱️ Wait for deployment to complete
 ```
 
-**Creates:** SNS Topic, AgentCore Memory, IAM roles, Secrets Manager, **Cognito Auth**, **CloudFront/S3 Hosting**, and **Secure Lambda Function URL** for chat proxy.
+**Creates:** SNS Topic, AgentCore Memory, IAM roles, Secrets Manager, **Cognito Auth**, and **CloudFront/S3 Hosting**.
 
 ### 2. Configure Agent Secrets
 Push configuration securely to AWS Secrets Manager:
@@ -101,14 +200,12 @@ aws-whats-new-alerts/
 │   └── requirements.txt
 ├── backend/                       # CDK Infrastructure
 │   ├── app.py                     # CDK entry point
-│   ├── newsletter_stack.py        # Complete stack (SNS + Memory + Secrets + Frontend + Lambda)
+│   ├── newsletter_stack.py        # Complete stack (SNS + Memory + Secrets + Frontend + Cognito)
 │   ├── configure_secret.py        # Config script (pushes to Secrets Manager)
 │   ├── deploy_frontend.py         # Deploys Chat UI to S3 & Invalidates CloudFront
-│   └── lambda/                    # Lambda Functions
-│       ├── chat_proxy.py          # Secure Proxy (Validates JWT, handles timeout)
-│       └── requirements.txt       # Proxy dependencies (python-jose, requests)
+│   └── lambda/                    # (Optional/Deprecated) Lambda Functions
 ├── frontend/                      # Web Chat UI
-│   ├── index.html                 # Single-page chat app (Tailwind + Markdown + Cognito)
+│   ├── index.html                 # Single-page chat app (Tailwind + Markdown + AWS SDK v3)
 │   └── config.js                  # Generated config
 ├── invoke_agent.py                # Manual testing script
 └── requirements.txt
@@ -162,6 +259,57 @@ No need to redeploy the agent code for configuration changes!
 4. **Sends newsletter** with only new articles
 5. **Memory automatically extracts** article URLs/dates from agent response for future deduplication
 6. **Events expire after 30 days** (automatic cleanup)
+
+---
+
+## 🔒 Security Architecture
+
+This project follows AWS security best practices with multiple layers of defense:
+
+### Authentication & Authorization
+- **Cognito User Pool**: Email/password authentication with verification
+- **Identity Pool**: Federated authentication for temporary AWS credentials
+- **IAM Roles**: Least-privilege permissions with account/region boundaries
+
+### IAM Permission Scoping
+
+The frontend authenticates users through Cognito and grants temporary credentials with this IAM policy:
+
+```json
+{
+  "Action": "bedrock-agentcore:InvokeAgentRuntime",
+  "Resource": "arn:aws:bedrock-agentcore:us-west-2:ACCOUNT_ID:runtime/*",
+  "Effect": "Allow"
+}
+```
+
+**Why `runtime/*` instead of a specific agent ARN?**
+
+This design balances security and user experience for single-agent deployments:
+
+1. ✅ **Account Boundary**: Can only invoke agents in YOUR AWS account (not other accounts)
+2. ✅ **Region Boundary**: Scoped to specific region (us-west-2)
+3. ✅ **Resource Type**: Only `runtime` resources, not other AgentCore resources
+4. ✅ **Single Action**: Only `InvokeAgentRuntime`, no create/delete/update permissions
+5. ✅ **Authentication Required**: Only Cognito-authenticated users can assume this role
+6. ✅ **Avoids Circular Dependency**: Agent needs role ARN at deploy time; role would need agent ARN
+
+**For multi-agent or multi-tenant deployments**, you can scope to a specific agent:
+```bash
+cdk deploy --context agentcore_arn=arn:aws:bedrock-agentcore:us-west-2:ACCOUNT:runtime/AGENT_ID
+```
+
+### Data Security
+- **Secrets Manager**: Configuration stored encrypted, not hardcoded
+- **HTTPS Everywhere**: CloudFront enforces HTTPS redirect
+- **Private S3**: Bucket not publicly accessible (CloudFront OAI only)
+- **Token Storage**: ID tokens in localStorage with expiration
+
+### Additional Security Controls
+- Password policy enforced (8+ chars, lowercase, digits)
+- Email verification required for signup
+- No anonymous access allowed
+- All AWS SDK calls use SigV4 signing
 
 ---
 

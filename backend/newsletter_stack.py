@@ -313,6 +313,21 @@ class NewsletterStack(Stack):
             )
         )
 
+        # CRITICAL: Add TagSession permission for AgentCore
+        # We need to override the AssumeRolePolicyDocument to add sts:TagSession
+        cfn_role = role.node.default_child
+        cfn_role.add_property_override(
+            "AssumeRolePolicyDocument",
+            {
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Effect": "Allow",
+                    "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
+                    "Action": ["sts:AssumeRole", "sts:TagSession"]
+                }]
+            }
+        )
+
         # Add tags
         cdk.Tags.of(role).add("Component", "AgentCoreRuntimeRole")
 
@@ -507,10 +522,21 @@ class NewsletterStack(Stack):
             )
         )
 
-        # Allow invoking Agent
-        # If we have the specific ARN, scope it down. Otherwise allow all agents in account.
-        agent_resource = self.agentcore_arn if self.agentcore_arn else f"arn:aws:bedrock-agentcore:{Stack.of(self).region}:{Stack.of(self).account}:agent-runtime/*"
-        
+        # Allow invoking AgentCore Runtime
+        #
+        # Security Design Decision:
+        # We scope permissions to runtime/* within this specific account and region.
+        # This is a best practice for single-agent deployments because:
+        #   1. Prevents cross-account access (account ID boundary)
+        #   2. Prevents cross-region access (region boundary)
+        #   3. Only allows InvokeAgentRuntime action (no create/delete/update)
+        #   4. Requires Cognito authentication (defense in depth)
+        #   5. Avoids circular dependency (agent needs role ARN, role needs agent ARN)
+        #
+        # For multi-agent or multi-tenant deployments, pass --context agentcore_arn=<ARN>
+        # to scope permissions to a specific agent runtime.
+        agent_resource = self.agentcore_arn if self.agentcore_arn else f"arn:aws:bedrock-agentcore:{Stack.of(self).region}:{Stack.of(self).account}:runtime/*"
+
         authenticated_role.add_to_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
@@ -568,89 +594,6 @@ class NewsletterStack(Stack):
         self.identity_pool = identity_pool
         self.frontend_bucket = frontend_bucket
         self.distribution = distribution
-
-        # 6. Chat Proxy Lambda
-        chat_function = _lambda.Function(
-            self,
-            "ChatProxyFunction",
-            runtime=_lambda.Runtime.PYTHON_3_11,
-            handler="chat_proxy.handler",
-            # Use bundling to install dependencies (requests, python-jose)
-            code=_lambda.Code.from_asset(
-                "lambda",
-                bundling=cdk.BundlingOptions(
-                    image=_lambda.Runtime.PYTHON_3_11.bundling_image,
-                    command=[
-                        "bash", "-c",
-                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
-                    ],
-                ),
-            ),
-            environment={
-                "AGENT_RUNTIME_ARN": self.agentcore_arn if self.agentcore_arn else "",
-                "AGENT_NAME": "aws_newsletter_bot",
-                "USER_POOL_ID": self.user_pool.user_pool_id,
-                "APP_CLIENT_ID": self.user_pool_client.user_pool_client_id
-            },
-            timeout=Duration.minutes(5), # Increased to 5 minutes
-            memory_size=256
-        )
-
-        # Create Function URL (bypasses API Gateway 29s timeout)
-        chat_fn_url = chat_function.add_function_url(
-            auth_type=_lambda.FunctionUrlAuthType.NONE,
-            cors=_lambda.FunctionUrlCorsOptions(
-                allowed_origins=["*"],
-                allowed_methods=[_lambda.HttpMethod.POST],
-                allowed_headers=["*"],
-            )
-        )
-
-        # Grant permissions to Lambda
-        # Allow invoking agent (specific or wildcard)
-        agent_resource = self.agentcore_arn if self.agentcore_arn else f"arn:aws:bedrock-agentcore:{Stack.of(self).region}:{Stack.of(self).account}:agent-runtime/*"
-        
-        chat_function.add_to_role_policy(
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=[
-                    "bedrock-agentcore:InvokeAgentRuntime",
-                    "bedrock-agentcore:ListAgentRuntimes" # For auto-discovery
-                ],
-                resources=["*"] # List requires *, Invoke can be scoped
-            )
-        )
-
-        # 7. API Gateway
-        api = apigateway.RestApi(
-            self,
-            "ChatApi",
-            rest_api_name=f"{self._stack_name}-api",
-            default_cors_preflight_options=apigateway.CorsOptions(
-                allow_origins=apigateway.Cors.ALL_ORIGINS,
-                allow_methods=apigateway.Cors.ALL_METHODS,
-                allow_headers=["Content-Type", "Authorization"]
-            )
-        )
-
-        # Cognito Authorizer
-        authorizer = apigateway.CognitoUserPoolsAuthorizer(
-            self,
-            "ChatAuthorizer",
-            cognito_user_pools=[user_pool]
-        )
-
-        # /chat endpoint
-        chat_resource = api.root.add_resource("chat")
-        chat_resource.add_method(
-            "POST",
-            apigateway.LambdaIntegration(chat_function),
-            authorizer=authorizer,
-            authorization_type=apigateway.AuthorizationType.COGNITO
-        )
-
-        self.api = api
-        self.chat_fn_url = chat_fn_url
 
     def _create_outputs(self):
         """Create CloudFormation outputs"""
@@ -767,20 +710,4 @@ class NewsletterStack(Stack):
             value=self.distribution.distribution_id,
             description="CloudFront Distribution ID",
             export_name=f"{self._stack_name}-cloudfront-distribution-id"
-        )
-
-        CfnOutput(
-            self,
-            "ApiUrl",
-            value=self.api.url,
-            description="API Gateway URL",
-            export_name=f"{self._stack_name}-api-url"
-        )
-
-        CfnOutput(
-            self,
-            "ChatFunctionUrl",
-            value=self.chat_fn_url.url,
-            description="Lambda Function URL for Chat (Long timeout)",
-            export_name=f"{self._stack_name}-chat-function-url"
         )

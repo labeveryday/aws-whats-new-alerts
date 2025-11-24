@@ -15,23 +15,26 @@ This agent:
 
 ## Architecture
 
-```
-Secrets Manager (Config) ←────────┐
-                                  │
-EventBridge Scheduler ────────→ Bedrock AgentCore Runtime
-                                  │
-                            Agent execution
-                                  │
-       ┌──────────────────────────┼────────────────────────────┐
-       ↓                          ↓                            ↓
- Strands Agent (agent.py)   AgentCore Memory (Semantic)    SNS Topic
-       ↓                          ↓                            ↓
- AWS News Feed              Deduplication               Email subscribers
-      ↑
-      │
-Web Chat UI (S3/CloudFront)
-      │
-Cognito Auth -> Lambda Function URL (Proxy) -> AgentCore Runtime
+```mermaid
+graph TD
+    User[User Browser] -->|HTTPS| CF[CloudFront]
+    CF --> S3[S3 Static Hosting]
+    User -->|Auth| Cognito[Cognito User Pool]
+    User -->|Get Creds| Identity[Cognito Identity Pool]
+    
+    subgraph "Streaming Flow"
+        Identity -->|Temp IAM Creds| SDK[AWS SDK v3]
+        SDK -->|Streaming Invocation| Runtime[AgentCore Runtime]
+    end
+    
+    subgraph "Backend"
+        Secrets[Secrets Manager] -->|Config| Runtime
+        Runtime -->|Execute| Agent[Agent Logic]
+        Agent -->|Deduplication| Memory[AgentCore Memory]
+        Agent -->|Publish| SNS[SNS Topic]
+        Agent -->|Schedule| Scheduler[EventBridge Scheduler]
+        Scheduler -->|Trigger| Runtime
+    end
 ```
 
 ## Deployment
@@ -99,11 +102,11 @@ This agent implements a "Self-Aware" pattern to solve infrastructure circular de
 3. **Solution**: Agent uses `find_agent_id` tool at runtime to look up "aws_newsletter_bot" and retrieve its own ARN dynamically.
 4. **Benefit**: Zero manual configuration or post-deployment env var updates required.
 
-### Direct Invocation & Proxying
-The agent supports **Direct Invocation** via a secure Lambda Function URL proxy (`backend/lambda/chat_proxy.py`). This architecture:
-1. **Bypasses API Gateway Timeouts**: Allows for long-running generations (up to 5 minutes).
-2. **Secures Access**: The proxy manually validates Cognito JWT tokens, ensuring only authenticated users can invoke the agent.
-3. **Handles CORS**: Allows the frontend (hosted on S3/CloudFront) to communicate securely.
+### Streaming & Direct Invocation
+The agent supports **Streaming Responses** via AWS SDK v3 (`bedrock-agentcore:InvokeAgentRuntime`). This architecture:
+1. **Bypasses API Gateway Timeouts**: Allows for long-running generations by keeping the stream open.
+2. **Secures Access**: The browser uses temporary IAM credentials from Cognito Identity Pool to sign requests directly.
+3. **Real-Time UI**: The chat interface updates in real-time as the agent "thinks" and generates tokens.
 
 ## File Structure
 

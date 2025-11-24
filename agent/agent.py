@@ -308,18 +308,38 @@ async def invoke_agent(payload, context):
             conversation_manager=conversation_manager
         )
 
-        # Non-streaming response (Stable for presentation via Function URL)
-        response = agent(prompt)
-        logger.info("Agent execution completed successfully")
-        
-        # Return the full response object/text
-        return response
+        # CRITICAL: Stream the response
+        # This loop runs for as long as needed - no timeout!
+        tool_active = False
+
+        async for item in agent.stream_async(prompt):
+            if "event" in item:
+                event = item["event"]
+
+                # Tool invocation started
+                if "contentBlockStart" in event and \
+                   "toolUse" in event["contentBlockStart"].get("start", {}):
+                    tool_active = True
+                    yield json.dumps({"event": event}) + "\n"
+
+                # Tool invocation completed
+                elif "contentBlockStop" in event and tool_active:
+                    tool_active = False
+                    yield json.dumps({"event": event}) + "\n"
+
+            # Stream tool execution details
+            elif "current_tool_use" in item and tool_active:
+                yield json.dumps(item["current_tool_use"]) + "\n"
+
+            # Stream text response chunks
+            elif "data" in item:
+                yield json.dumps({"data": item["data"]}) + "\n"
 
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Global handler exception: {error_msg}", exc_info=True)
         # Return error as a dict so it's serialized cleanly
-        return {"error": f"Agent execution failed: {error_msg}"}
+        yield json.dumps({"error": f"Agent execution failed: {error_msg}"}) + "\n"
 
 if __name__ == "__main__":
     app.run()

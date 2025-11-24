@@ -18,14 +18,39 @@ def get_stack_outputs(stack_name: str, region: str):
         outputs[output['OutputKey']] = output['OutputValue']
     return outputs
 
-def generate_config(outputs, region):
+def find_agent_runtime_arn(agent_name, region):
+    """Find agent ARN by name using Control Plane"""
+    try:
+        client = boto3.client('bedrock-agentcore-control', region_name=region)
+        paginator = client.get_paginator('list_agent_runtimes')
+        for page in paginator.paginate():
+            for agent in page.get('agentRuntimes', []):
+                if agent_name in agent.get('agentRuntimeName', ''):
+                    print(f"✅ Found agent runtime: {agent['agentRuntimeArn']}")
+                    return agent['agentRuntimeArn']
+    except Exception as e:
+        print(f"⚠️ Could not auto-discover agent ARN: {e}")
+    return None
+
+def generate_config(outputs, region, agent_arn=None):
+    # Extract short agent ID from ARN if available
+    # ARN format: arn:aws:bedrock-agentcore:region:account:runtime/NAME-AGENT_ID
+    # We need just the alphanumeric AGENT_ID (last 10 chars after final hyphen)
+    agent_id = "TSTALIASID" # Default fallback
+    if agent_arn:
+        try:
+            runtime_name = agent_arn.split('/')[-1]  # e.g., "aws_newsletter_bot-Yu2RiP7GOJ"
+            agent_id = runtime_name.split('-')[-1]   # e.g., "Yu2RiP7GOJ"
+        except IndexError:
+            print(f"⚠️ Could not extract agent ID from ARN: {agent_arn}")
+
     config = {
         "region": region,
         "userPoolId": outputs.get('UserPoolId'),
         "userPoolClientId": outputs.get('UserPoolClientId'),
         "identityPoolId": outputs.get('IdentityPoolId'),
-        "apiUrl": outputs.get('ChatFunctionUrl'), # Use Function URL for long timeout
-        "agentId": "aws_newsletter_bot" # Default name
+        "agentRuntimeArn": agent_arn,
+        "agentId": agent_id 
     }
     
     content = f"window.awsConfig = {json.dumps(config, indent=4)};"
@@ -96,7 +121,14 @@ def main():
             print("❌ Error: FrontendBucketName not found in stack outputs.")
             return
             
-        generate_config(outputs, args.region)
+        # Attempt to find Agent Runtime ARN
+        agent_name = "aws_newsletter_bot" # Default name from agent.py
+        agent_arn = find_agent_runtime_arn(agent_name, args.region)
+        
+        if not agent_arn:
+            print(f"⚠️ Agent Runtime ARN not found for name '{agent_name}'. You may need to update config.js manually.")
+
+        generate_config(outputs, args.region, agent_arn)
         upload_to_s3(bucket_name, args.region)
         
         distribution_id = outputs.get('CloudFrontDistributionId')

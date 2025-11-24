@@ -209,12 +209,21 @@ __marimo__/
 # Project-specific
 # Never commit development/editor-specific files
 .claude/
-CLAUDE.md
 .claude
+CLAUDE.md
 .bedrock_agentcore/
 coder.py
+
+# Agent configuration (contains role ARNs)
+agent/agent_config.env
+
+# Test and debug scripts
+test_*.py
 
 # CDK asset staging directory
 .cdk.staging
 cdk.out
 .bedrock_agentcore.yaml
+
+# Generated frontend config (contains IDs)
+frontend/config.js

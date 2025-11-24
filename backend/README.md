@@ -4,18 +4,26 @@ CDK-based infrastructure for the AWS What's New Alerts newsletter system. Deploy
 
 ## Architecture
 
-```
-Secrets Manager (Config) ←────────┐
-                                  │
-EventBridge Scheduler ────────→ Bedrock AgentCore Runtime
-                                  │
-                            Agent execution
-                                  │
-       ┌──────────────────────────┼──────────────────┐
-       ↓                          ↓                  ↓
- AWS News Feed            AgentCore Memory      SNS Topic
-       ↓                          ↓                  ↓
-    Filtering               Deduplication      Email subscribers
+```mermaid
+graph TD
+    User[User Browser] -->|HTTPS| CF[CloudFront]
+    CF --> S3[S3 Static Hosting]
+    User -->|Auth| Cognito[Cognito User Pool]
+    User -->|Get Creds| Identity[Cognito Identity Pool]
+    
+    subgraph "Streaming Flow"
+        Identity -->|Temp IAM Creds| SDK[AWS SDK v3]
+        SDK -->|Streaming Invocation| Runtime[AgentCore Runtime]
+    end
+    
+    subgraph "Backend"
+        Secrets[Secrets Manager] -->|Config| Runtime
+        Runtime -->|Execute| Agent[Agent Logic]
+        Agent -->|Deduplication| Memory[AgentCore Memory]
+        Agent -->|Publish| SNS[SNS Topic]
+        Agent -->|Schedule| Scheduler[EventBridge Scheduler]
+        Scheduler -->|Trigger| Runtime
+    end
 ```
 
 ## Features
@@ -24,8 +32,8 @@ EventBridge Scheduler ────────→ Bedrock AgentCore Runtime
 - 🧠 **Article Deduplication** via AgentCore Memory (30-day retention)
 - 🔒 **Secure Configuration** via AWS Secrets Manager
 - 💬 **Secure Chat UI** with Cognito Auth, S3 Hosting, and CloudFront
-- 🛡️ **Secure Proxy** validates Cognito JWTs before invoking Agent
-- ⚡ **Long-Running Requests** via Lambda Function URL (Proxy)
+- 🛡️ **Direct Streaming** - Secure, low-latency connection using AWS SDK v3 (No API Gateway/Lambda Proxy needed)
+- ⚡ **Real-Time Responses** - Immediate token streaming via AgentCore Runtime
 - 🤖 **Autonomous Operation** via EventBridge Scheduler
 - 🔐 **IAM Security** with least privilege roles
 - 🚀 **Infrastructure as Code** with AWS CDK
@@ -41,13 +49,12 @@ EventBridge Scheduler ────────→ Bedrock AgentCore Runtime
 ### Frontend Resources
 5. **Cognito User Pool** - User management (Sign up/in)
 6. **Cognito Identity Pool** - AWS credentials for authenticated users
-7. **Lambda Function URL Proxy** - Secure, long-running proxy to AgentCore Runtime (bypasses API Gateway 29s timeout)
-8. **S3 Bucket** - Static website hosting
-9. **CloudFront** - HTTPS content delivery
+7. **S3 Bucket** - Static website hosting
+8. **CloudFront** - HTTPS content delivery
 
 ### Optional Resources
-10. **EventBridge Scheduler Role** - IAM role allowing the Agent to create/manage its own schedule (Autonomous Scheduling)
-11. **EventBridge Scheduler DLQ** - Dead Letter Queue for failed schedule invocations
+9. **EventBridge Scheduler Role** - IAM role allowing the Agent to create/manage its own schedule (Autonomous Scheduling)
+10. **EventBridge Scheduler DLQ** - Dead Letter Queue for failed schedule invocations
 
 ## Quick Start
 
@@ -65,9 +72,6 @@ pip install -r requirements.txt
 
 # Configure AWS CLI
 aws configure
-
-# Start Docker Desktop (REQUIRED for bundling Lambda dependencies)
-# Open Docker Desktop on your machine
 ```
 
 ### Initial Deployment
@@ -77,7 +81,6 @@ aws configure
 cdk bootstrap
 
 # 2. Deploy infrastructure (Backend + Frontend)
-# This uses Docker to bundle python-jose and requests into the Lambda layer
 cdk deploy --context email=your-email@example.com
 
 # 3. Configure Agent Secrets & CLI Environment
@@ -150,9 +153,6 @@ backend/
 ├── newsletter_stack.py     # Complete stack definition
 ├── configure_secret.py     # Updates Secrets Manager
 ├── deploy_frontend.py      # Deploys Frontend to S3
-├── lambda/                 # Lambda functions
-│   ├── chat_proxy.py       # Secure Proxy with JWT Validation
-│   └── requirements.txt    # Dependencies (python-jose, requests)
 ├── cdk.json                # CDK configuration
 ├── requirements.txt        # Python dependencies
 └── README.md               # This file
@@ -178,7 +178,6 @@ Pass configuration via CDK context (command line or `cdk.json`):
 - `AgentConfigSecretName` - Name of the Secret storing configuration
 - `AgentCoreRuntimeRoleArn` - IAM role for agent runtime
 - `CloudFrontUrl` - URL for the Chat UI
-- `ChatFunctionUrl` - Lambda Function URL endpoint
 - `UserPoolId` / `IdentityPoolId` - Cognito Auth IDs
 
 ## IAM Roles
