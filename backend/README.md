@@ -84,8 +84,9 @@ cdk bootstrap
 cdk deploy --context email=your-email@example.com
 
 # 3. Configure Agent Secrets & CLI Environment
-#    - Updates AWS Secrets Manager (for runtime)
-#    - Creates local ../agent/agent_config.env (for deployment CLI)
+#    Dual Output:
+#    1) Updates AWS Secrets Manager (runtime config: SNS, Memory, etc.)
+#    2) Generates ../agent/agent_config.env (deployment config: role ARN, agent name)
 python configure_secret.py --region us-west-2 --email your-email@example.com
 
 # 4. Deploy Frontend Code
@@ -106,8 +107,21 @@ After infrastructure is deployed:
 # 6. Navigate to agent directory
 cd ../agent
 
-# 7. Configure and deploy agent
-agentcore configure -e agent.py --region us-west-2
+# 7. Configure and deploy agent using values from agent_config.env
+# Option A: Use explicit values (copy from agent_config.env)
+agentcore configure -e agent.py \
+  --region us-west-2 \
+  --name aws_newsletter_bot \
+  --execution-role arn:aws:iam::ACCOUNT:role/aws-newsletter-agentcore-runtime-role
+
+# Option B: Source the env file and use variables
+source agent_config.env
+agentcore configure -e agent.py \
+  --region $AWS_REGION \
+  --name $AGENT_NAME \
+  --execution-role $AGENTCORE_RUNTIME_ROLE_ARN
+
+# Launch to AWS
 agentcore launch
 
 # 8. Autonomous Self-Scheduling
@@ -136,14 +150,30 @@ cdk list
 
 The `configure_secret.py` script handles configuration updates without needing to redeploy code.
 
+**What it does:**
+1. **Reads CloudFormation stack outputs** (SNS ARN, Memory ID, Role ARN, etc.)
+2. **Updates Secrets Manager** with runtime configuration (used by agent at runtime)
+3. **Generates `agent/agent_config.env`** with deployment configuration (used by `agentcore configure`)
+
 ```bash
 # Update configuration (e.g. change email)
 python configure_secret.py --email new-email@example.com
+
+# Output:
+# ✅ Secret updated successfully
+# ✅ Generated minimal deployment config: ../agent/agent_config.env
+# 📋 Configuration Updated:
+#    - Runtime Secret: aws-newsletter/agent-config
+#    - Local Config: /path/to/agent/agent_config.env
 
 # View stack outputs
 aws cloudformation describe-stacks --stack-name aws-newsletter-prod \
     --query 'Stacks[0].Outputs' --output table
 ```
+
+**Two-Tier Configuration Pattern:**
+- **Secrets Manager** (`aws-newsletter/agent-config`): Runtime config loaded by agent at startup via `secrets_loader.py`
+- **agent_config.env**: Local file used by `agentcore configure` command to get the IAM role ARN for deployment
 
 ## File Structure
 

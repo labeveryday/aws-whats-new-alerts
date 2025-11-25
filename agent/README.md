@@ -48,20 +48,42 @@ cdk deploy --context email=your-email@example.com
 ```
 
 ### 2. Configure Secrets
-Instead of local `.env` files, we push configuration securely to AWS Secrets Manager.
+Push configuration to AWS Secrets Manager and generate local deployment config.
 
 ```bash
+cd ../backend
 python configure_secret.py --email your-email@example.com
 ```
+
+**This creates:**
+1. **Secrets Manager entry** (`aws-newsletter/agent-config`) - Runtime config for the agent
+2. **Local file** (`agent/agent_config.env`) - Deployment config with role ARN for `agentcore configure`
 
 ### 3. Deploy Agent
 Deploy the agent to AgentCore Runtime.
 
 ```bash
 cd ../agent
-agentcore configure -e agent.py --region us-west-2
+
+# Configure agent using values from agent_config.env
+# Option A: Use explicit values (copy from agent_config.env)
+agentcore configure -e agent.py \
+  --region us-west-2 \
+  --name aws_newsletter_bot \
+  --execution-role arn:aws:iam::ACCOUNT:role/aws-newsletter-agentcore-runtime-role
+
+# Option B: Source the env file and use variables
+source agent_config.env
+agentcore configure -e agent.py \
+  --region $AWS_REGION \
+  --name $AGENT_NAME \
+  --execution-role $AGENTCORE_RUNTIME_ROLE_ARN
+
+# Launch to AWS
 agentcore launch
 ```
+
+**Note:** The `agentcore configure` command requires `--name` and `--execution-role` parameters. Get these values from the `agent_config.env` file created in step 2.
 
 ### 4. Autonomous Self-Scheduling (The "Magic" Step)
 Ask the agent to set up its own schedule.
@@ -76,15 +98,29 @@ Ask the agent to set up its own schedule.
 
 ## Configuration
 
+The agent uses a **two-tier configuration pattern**:
+
+### 1. Runtime Configuration (Secrets Manager)
 The agent loads its configuration from AWS Secrets Manager at startup via `secrets_loader.py`.
 
-**Configured Variables (in Secrets Manager):**
+**Variables stored in Secrets Manager:**
 - `SNS_TOPIC_ARN`: For email delivery
 - `BEDROCK_AGENTCORE_MEMORY_ID`: For deduplication
 - `AGENT_NAME`: For self-discovery ("aws_newsletter_bot")
 - `NEWSLETTER_EMAIL`: Default recipient
+- `AGENTCORE_RUNTIME_ROLE_ARN`: IAM role for agent execution
+- `SCHEDULER_ROLE_ARN`: IAM role for EventBridge scheduling
 
-To update configuration, simply re-run `backend/configure_secret.py` with new parameters.
+### 2. Deployment Configuration (Local File)
+The `agent_config.env` file contains minimal config needed for the `agentcore configure` command:
+
+```env
+AGENTCORE_RUNTIME_ROLE_ARN=arn:aws:iam::ACCOUNT:role/aws-newsletter-agentcore-runtime-role
+AWS_REGION=us-west-2
+AGENT_NAME=aws_newsletter_bot
+```
+
+**To update configuration:** Re-run `backend/configure_secret.py` with new parameters. This updates both Secrets Manager and regenerates `agent_config.env`.
 
 ## Agent Capabilities
 

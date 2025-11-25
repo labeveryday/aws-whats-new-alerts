@@ -139,24 +139,60 @@ cdk deploy --context email=your-email@example.com
 **Creates:** SNS Topic, AgentCore Memory, IAM roles, Secrets Manager, **Cognito Auth**, and **CloudFront/S3 Hosting**.
 
 ### 2. Configure Agent Secrets
-Push configuration securely to AWS Secrets Manager:
+Push configuration securely to AWS Secrets Manager and generate local deployment config:
 
 ```bash
 python configure_secret.py --email your-email@example.com
 ```
 
->NOTE: You will need to get the AGENTCORE_RUNTIME_ROLE_ARN from .env and use it when you launch the agent. This contains all the permissions for your agent.
+**This script does two things:**
+1. ✅ **Updates Secrets Manager** - Pushes runtime config (SNS ARN, Memory ID, etc.) for the agent to load at runtime
+2. ✅ **Generates `agent/agent_config.env`** - Creates local file with `AGENTCORE_RUNTIME_ROLE_ARN` and `AGENT_NAME` for `agentcore configure` command
+
+```
+configure_secret.py Flow:
+┌─────────────────────────────────────────────────────────────┐
+│  1. Read CloudFormation Stack Outputs                       │
+│     (SNS ARN, Memory ID, Role ARN, etc.)                    │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ├──────────────────┬─────────────────
+                         ▼                  ▼
+         ┌───────────────────────┐  ┌──────────────────────┐
+         │  AWS Secrets Manager  │  │  agent_config.env    │
+         │  (Runtime Config)     │  │  (Deployment Config) │
+         └───────────┬───────────┘  └──────────┬───────────┘
+                     │                         │
+                     │ Used by:                │ Used by:
+                     ▼                         ▼
+         ┌───────────────────────┐  ┌──────────────────────┐
+         │  Agent at Startup     │  │  agentcore configure │
+         │  (secrets_loader.py)  │  │  (CLI deployment)    │
+         └───────────────────────┘  └──────────────────────┘
+```
 
 ### 3. Deploy Agent (2 minutes)
 ```bash
 cd ../agent
 
-# Configure agent (builds the artifact)
-agentcore configure -e agent.py --region us-west-2
+# Configure agent with explicit parameters from agent_config.env
+agentcore configure -e agent.py \
+  --region us-west-2 \
+  --name aws_newsletter_bot \
+  --execution-role arn:aws:iam::ACCOUNT:role/aws-newsletter-agentcore-runtime-role
+
+# Or source the env file and use variables:
+source agent_config.env
+agentcore configure -e agent.py \
+  --region $AWS_REGION \
+  --name $AGENT_NAME \
+  --execution-role $AGENTCORE_RUNTIME_ROLE_ARN
 
 # Launch to AWS
 agentcore launch
 ```
+
+**Note:** The `agent_config.env` file generated in step 2 contains the `AGENTCORE_RUNTIME_ROLE_ARN` and `AGENT_NAME` values needed for these parameters.
 
 ### 4. Deploy Frontend (1 minute)
 Generates config and uploads the Chat UI to S3.
