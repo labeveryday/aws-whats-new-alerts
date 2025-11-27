@@ -123,6 +123,18 @@ flowchart TB
 - AWS Account with Bedrock AgentCore access
 - Python 3.10+ in virtual environment: `source .venv/bin/activate`
 - AWS CDK CLI: `npm install -g aws-cdk`
+- AgentCore CLI: `pip install bedrock-agentcore-cli`
+
+### One-Command Deployment
+```bash
+./deploy.sh --email your-email@example.com
+```
+
+This deploys everything (infrastructure, secrets, agent, frontend). See [Interactive Prompts](#interactive-prompts-during-agentcore-configure) for required manual selections during agent configuration.
+
+---
+
+### Manual Deployment Steps
 
 ### 1. Deploy Infrastructure (5-10 minutes)
 ```bash
@@ -189,6 +201,20 @@ agentcore launch --env SECRET_NAME=$SECRET_NAME --env AWS_REGION=$AWS_REGION
 ```
 
 **Note:** The `agent_config.env` file generated in step 2 contains all required values including `SECRET_NAME` for runtime configuration loading.
+
+#### Interactive Prompts During agentcore configure
+
+During `agentcore configure`, you'll be prompted to select:
+
+| Prompt | Recommended Selection |
+|--------|----------------------|
+| Dependency file | Press Enter to use `requirements.txt` |
+| Deployment type | `1` - Direct Code Deploy (recommended) |
+| Python runtime | `4` - PYTHON_3_13 |
+| S3 bucket | Press Enter to auto-create |
+| OAuth authorizer | `no` (use IAM) |
+| Request header allowlist | `no` (use defaults) |
+| Memory configuration | Select existing memory (e.g., `1`) |
 
 ### 4. Deploy Frontend (1 minute)
 Generates config and uploads the Chat UI to S3.

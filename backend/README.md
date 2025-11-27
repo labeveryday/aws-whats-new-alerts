@@ -121,8 +121,8 @@ agentcore configure -e agent.py \
   --name $AGENT_NAME \
   --execution-role $AGENTCORE_RUNTIME_ROLE_ARN
 
-# Launch to AWS
-agentcore launch
+# Launch to AWS with SECRET_NAME environment variable
+agentcore launch --env SECRET_NAME=$SECRET_NAME --env AWS_REGION=$AWS_REGION
 
 # 8. Autonomous Self-Scheduling
 # Ask the agent to schedule itself via Chat UI or CLI

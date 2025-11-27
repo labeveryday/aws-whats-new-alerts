@@ -79,11 +79,25 @@ agentcore configure -e agent.py \
   --name $AGENT_NAME \
   --execution-role $AGENTCORE_RUNTIME_ROLE_ARN
 
-# Launch to AWS
-agentcore launch
+# Launch to AWS with SECRET_NAME environment variable
+agentcore launch --env SECRET_NAME=$SECRET_NAME --env AWS_REGION=$AWS_REGION
 ```
 
 **Note:** The `agentcore configure` command requires `--name` and `--execution-role` parameters. Get these values from the `agent_config.env` file created in step 2.
+
+#### Interactive Prompts During agentcore configure
+
+During `agentcore configure`, you'll be prompted to select:
+
+| Prompt | Recommended Selection |
+|--------|----------------------|
+| Dependency file | Press Enter to use `requirements.txt` |
+| Deployment type | `1` - Direct Code Deploy (recommended) |
+| Python runtime | `4` - PYTHON_3_13 |
+| S3 bucket | Press Enter to auto-create |
+| OAuth authorizer | `no` (use IAM) |
+| Request header allowlist | `no` (use defaults) |
+| Memory configuration | Select existing memory (e.g., `1`) |
 
 ### 4. Autonomous Self-Scheduling (The "Magic" Step)
 Ask the agent to set up its own schedule.
