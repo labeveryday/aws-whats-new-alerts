@@ -388,6 +388,10 @@ agentcore update # or agentcore deploy --rebuild
 
 ### Destroy Everything
 ```bash
-cd backend
-cdk destroy
+# One-command destroy (Agent + Infrastructure)
+./destroy.sh
+
+# Or manually:
+cd agent && agentcore destroy --force
+cd backend && cdk destroy
 ```

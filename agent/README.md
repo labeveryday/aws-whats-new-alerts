@@ -118,9 +118,12 @@ The agent uses a **two-tier configuration pattern**:
 The agent loads its configuration from AWS Secrets Manager at startup via `secrets_loader.py`.
 
 **Variables stored in Secrets Manager:**
+- `AWS_REGION`: AWS region for all services
 - `SNS_TOPIC_ARN`: For email delivery
 - `BEDROCK_AGENTCORE_MEMORY_ID`: For deduplication
-- `AGENT_NAME`: For self-discovery ("aws_newsletter_bot")
+- `AGENT_NAME`: For self-discovery
+- `AGENT_ACTOR_ID`: Actor identifier for memory
+- `AGENT_SESSION_ID`: Session ID for memory persistence (remembering name, preferences)
 - `NEWSLETTER_EMAIL`: Default recipient
 - `AGENTCORE_RUNTIME_ROLE_ARN`: IAM role for agent execution
 - `SCHEDULER_ROLE_ARN`: IAM role for EventBridge scheduling

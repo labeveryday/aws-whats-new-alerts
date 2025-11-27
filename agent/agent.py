@@ -35,7 +35,7 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 
 # Load configuration from AWS Secrets Manager (if configured)
 # Pass SECRET_NAME via: agentcore launch --env SECRET_NAME=your-secret-name
-AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
+AWS_REGION = os.getenv("AWS_REGION")
 SECRET_NAME = os.getenv("SECRET_NAME")
 
 if SECRET_NAME:
@@ -51,11 +51,11 @@ MEMORY_ID = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
 CUTOFF_DATE = "2022-10-01"
 
 # Agent Identity Configuration
-ACTOR_ID = os.getenv("AGENT_ACTOR_ID", "aws_newsletter_bot")
-# Use a random session ID by default to prevent stuck tool states during development/demo
-# For production, you'd want to persist this for user continuity
-SESSION_ID = os.getenv("AGENT_SESSION_ID", str(uuid.uuid4()))
-AGENT_NAME = os.getenv("AGENT_NAME", "aws_newsletter_bot")
+ACTOR_ID = os.getenv("AGENT_ACTOR_ID")
+# Session ID for memory persistence (remembering name, preferences, etc.)
+# Set via AGENT_SESSION_ID env var or Secrets Manager
+SESSION_ID = os.getenv("AGENT_SESSION_ID")
+AGENT_NAME = os.getenv("AGENT_NAME")
 
 # Print configuration for verification (exclude sensitive keys if any)
 logger.info(f"Configuration Loaded: SNS_TOPIC_ARN={SNS_TOPIC_ARN}, MEMORY_ID={MEMORY_ID}")
@@ -127,7 +127,9 @@ WORKFLOW
    - Generate intelligent TLDR highlighting key themes/trends (especially Agentic AI)
    - Create concise subject line capturing main theme
 
-8. Send email via publish_message tool to: {SNS_TOPIC_ARN}
+8. Send email via the `publish_to_newsletter_topic` tool with:
+   - subject: Your email subject line
+   - message: Your newsletter content
 
 9. List processed article URLs in your response (for automatic memory extraction)
 
@@ -267,9 +269,9 @@ async def invoke_agent(payload, context):
 
         # Use consistent actor and session IDs for persistent memory
         actor_id = ACTOR_ID
-        # Force random session ID to avoid ValidationException from stuck tool states
-        # This ensures every request starts with a clean slate for the demo
-        session_id = str(uuid.uuid4())
+        # Use consistent session ID for memory persistence (remembering user preferences, name, etc.)
+        # If not configured, generate a random one (no persistence across invocations)
+        session_id = SESSION_ID if SESSION_ID else str(uuid.uuid4())
 
         # Create agent instance with memory configuration
         # Note: We create a new instance per invocation to ensure proper session isolation
@@ -290,8 +292,8 @@ async def invoke_agent(payload, context):
             }
         )
 
-        # Get region from environment, default to us-west-2
-        region = os.getenv("AWS_REGION", "us-west-2")
+        # Get region from environment
+        region = AWS_REGION
 
         session_manager = AgentCoreMemorySessionManager(
             agentcore_memory_config=memory_config,
@@ -306,8 +308,8 @@ async def invoke_agent(payload, context):
         agent = Agent(
             system_prompt=SYSTEM_PROMPT,
             tools=[current_time],
-            load_tools_from_directory=True,  # Loads aws_news_tools.py and sns_tools.py automatically,
-            #session_manager=session_manager,
+            load_tools_from_directory=True,  # Loads aws_news_tools.py, sns_tools.py, and create_events.py
+            session_manager=session_manager,
             conversation_manager=conversation_manager
         )
 

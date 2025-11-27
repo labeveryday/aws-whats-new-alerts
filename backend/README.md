@@ -225,7 +225,10 @@ Allows EventBridge Scheduler to:
 ## Clean Up
 
 ```bash
-# Destroy all infrastructure
+# One-command destroy (from project root)
+../destroy.sh
+
+# Or destroy infrastructure only
 cdk destroy
 
 # Secret deletion is usually immediate, but may have a recovery window
