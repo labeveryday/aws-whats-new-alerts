@@ -122,47 +122,12 @@
                         <p class="text-xs text-slate-400 font-medium">Powered by Amazon Bedrock AgentCore</p>
                     </div>
                 </div>
-                <div class="flex items-center space-x-4">
-                    <!-- Session Info Button (click to show details) -->
-                    <div class="relative">
-                        <button id="session-info-btn" class="text-slate-400 hover:text-white text-sm font-medium transition-colors duration-200 flex items-center space-x-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>Session</span>
-                        </button>
-                        <!-- Dropdown Panel -->
-                        <div id="session-info-panel" class="hidden absolute right-0 mt-2 w-80 bg-slate-800 rounded-lg shadow-xl border border-slate-700 z-50">
-                            <div class="p-4 space-y-3">
-                                <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Session Info</h3>
-                                <div class="space-y-2">
-                                    <div class="bg-slate-700/50 rounded p-2">
-                                        <div class="text-xs text-slate-400">User ID</div>
-                                        <div id="side-panel-user-id" class="text-sm font-mono text-green-400 break-all">Loading...</div>
-                                    </div>
-                                    <div class="bg-slate-700/50 rounded p-2">
-                                        <div class="text-xs text-slate-400">Session ID</div>
-                                        <div id="side-panel-session-id" class="text-sm font-mono text-blue-400 break-all">Loading...</div>
-                                    </div>
-                                    <div class="bg-slate-700/50 rounded p-2">
-                                        <div class="text-xs text-slate-400">Memory Namespace</div>
-                                        <div id="side-panel-memory-ns" class="text-sm font-mono text-purple-400 break-all">Loading...</div>
-                                    </div>
-                                    <div class="bg-slate-700/50 rounded p-2">
-                                        <div class="text-xs text-slate-400">Agent ARN</div>
-                                        <div id="side-panel-agent-arn" class="text-xs font-mono text-slate-300 break-all">Loading...</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <button id="logout-btn" class="text-slate-300 hover:text-white text-sm font-medium transition-colors duration-200 flex items-center space-x-1">
-                        <span>Sign Out</span>
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                        </svg>
-                    </button>
-                </div>
+                <button id="logout-btn" class="text-slate-300 hover:text-white text-sm font-medium transition-colors duration-200 flex items-center space-x-1">
+                    <span>Sign Out</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                </button>
             </div>
         </header>
 
@@ -176,10 +141,11 @@
                         </div>
                         <div class="bg-white p-5 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-slate-800 leading-relaxed">
                             <p class="font-medium mb-2">Hello! I'm your AWS Newsletter Agent.</p>
-                            <p class="text-slate-600">I can generate newsletters, summarize recent announcements, or schedule daily updates for you.</p>
+                            <p class="text-slate-600">I track AWS announcements daily and can create personalized newsletters focused on Agentic AI, Strands Agents, AgentCore, MCP, A2A, and everything AI/ML.</p>
                             <div class="mt-4 flex flex-wrap gap-2">
-                                <button onclick="fillInput('Generate newsletter for yesterday')" class="text-xs bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-full border border-slate-200 transition-colors">Generate newsletter for yesterday</button>
-                                <button onclick="fillInput('Schedule daily updates at 9am')" class="text-xs bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-full border border-slate-200 transition-colors">Schedule daily updates</button>
+                                <button onclick="fillInput('What\\'s new in AWS today?')" class="text-xs bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-full border border-slate-200 transition-colors">What's new in AWS today?</button>
+                                <button onclick="fillInput('Generate a newsletter')" class="text-xs bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-full border border-slate-200 transition-colors">Generate a newsletter</button>
+                                <button onclick="fillInput('Set up daily updates')" class="text-xs bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-full border border-slate-200 transition-colors">Set up daily updates</button>
                             </div>
                         </div>
                     </div>
@@ -207,7 +173,6 @@
                 <p class="text-center text-xs text-slate-400 mt-3">AI responses may vary. Verify important information.</p>
             </div>
         </footer>
-        </div> <!-- End Main Content Area -->
     </div>
 
     <!-- Configuration Placeholder (Will be replaced by deployment script) -->
@@ -280,20 +245,6 @@
             signupScreen.classList.add('hidden');
             verifyScreen.classList.add('hidden');
             document.getElementById('app-interface').classList.remove('hidden');
-
-            // Update side panel with session info
-            updateSidePanel();
-        }
-
-        function updateSidePanel() {
-            const agentArn = window.awsConfig?.agentRuntimeArn || 'Not configured';
-            const maskedUserId = userId ? `${userId.substring(0, 8)}...` : 'Not authenticated';
-            const memoryNamespace = userId ? `/newsletter/preferences/${userId.substring(0, 8)}...` : 'N/A';
-
-            document.getElementById('side-panel-agent-arn').textContent = agentArn;
-            document.getElementById('side-panel-user-id').textContent = maskedUserId;
-            document.getElementById('side-panel-memory-ns').textContent = memoryNamespace;
-            document.getElementById('side-panel-session-id').textContent = sessionId.substring(0, 20) + '...';
         }
 
         // --- Authentication Logic ---
