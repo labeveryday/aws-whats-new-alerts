@@ -196,12 +196,24 @@ deploy_agent() {
         exit 1
     fi
 
-    # Configure the agent
-    echo "Configuring agent..."
-    agentcore configure -e agent.py \
-        --region "$REGION" \
-        --name "$AGENT_NAME" \
-        --execution-role "$AGENTCORE_RUNTIME_ROLE_ARN"
+    # Configure the agent with JWT authorization for per-user memory isolation
+    # The AUTHORIZER_CONFIG enables AgentCore to validate Cognito JWTs
+    # and pass the user identity (sub claim) to the agent via headers
+    echo "Configuring agent with JWT authorization..."
+    if [ -n "$AUTHORIZER_CONFIG" ]; then
+        agentcore configure -e agent.py \
+            --region "$REGION" \
+            --name "$AGENT_NAME" \
+            --execution-role "$AGENTCORE_RUNTIME_ROLE_ARN" \
+            --authorizer-config "$AUTHORIZER_CONFIG" \
+            --request-header-allowlist "Authorization"
+    else
+        echo "Warning: AUTHORIZER_CONFIG not set. Deploying without JWT auth."
+        agentcore configure -e agent.py \
+            --region "$REGION" \
+            --name "$AGENT_NAME" \
+            --execution-role "$AGENTCORE_RUNTIME_ROLE_ARN"
+    fi
 
     # Launch the agent
     echo "Launching agent..."

@@ -122,12 +122,47 @@
                         <p class="text-xs text-slate-400 font-medium">Powered by Amazon Bedrock AgentCore</p>
                     </div>
                 </div>
-                <button id="logout-btn" class="text-slate-300 hover:text-white text-sm font-medium transition-colors duration-200 flex items-center space-x-1">
-                    <span>Sign Out</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                </button>
+                <div class="flex items-center space-x-4">
+                    <!-- Session Info Button (click to show details) -->
+                    <div class="relative">
+                        <button id="session-info-btn" class="text-slate-400 hover:text-white text-sm font-medium transition-colors duration-200 flex items-center space-x-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>Session</span>
+                        </button>
+                        <!-- Dropdown Panel -->
+                        <div id="session-info-panel" class="hidden absolute right-0 mt-2 w-80 bg-slate-800 rounded-lg shadow-xl border border-slate-700 z-50">
+                            <div class="p-4 space-y-3">
+                                <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Session Info</h3>
+                                <div class="space-y-2">
+                                    <div class="bg-slate-700/50 rounded p-2">
+                                        <div class="text-xs text-slate-400">User ID</div>
+                                        <div id="side-panel-user-id" class="text-sm font-mono text-green-400 break-all">Loading...</div>
+                                    </div>
+                                    <div class="bg-slate-700/50 rounded p-2">
+                                        <div class="text-xs text-slate-400">Session ID</div>
+                                        <div id="side-panel-session-id" class="text-sm font-mono text-blue-400 break-all">Loading...</div>
+                                    </div>
+                                    <div class="bg-slate-700/50 rounded p-2">
+                                        <div class="text-xs text-slate-400">Memory Namespace</div>
+                                        <div id="side-panel-memory-ns" class="text-sm font-mono text-purple-400 break-all">Loading...</div>
+                                    </div>
+                                    <div class="bg-slate-700/50 rounded p-2">
+                                        <div class="text-xs text-slate-400">Agent ARN</div>
+                                        <div id="side-panel-agent-arn" class="text-xs font-mono text-slate-300 break-all">Loading...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="logout-btn" class="text-slate-300 hover:text-white text-sm font-medium transition-colors duration-200 flex items-center space-x-1">
+                        <span>Sign Out</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -172,6 +207,7 @@
                 <p class="text-center text-xs text-slate-400 mt-3">AI responses may vary. Verify important information.</p>
             </div>
         </footer>
+        </div> <!-- End Main Content Area -->
     </div>
 
     <!-- Configuration Placeholder (Will be replaced by deployment script) -->
@@ -179,9 +215,6 @@
 
     <!-- App Logic -->
     <script type="module">
-        // Import from vendored AWS SDK v3 bundle (no external CDNs)
-        import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand, fromCognitoIdentityPool } from "./vendor/aws-sdk-v3-bundle.min.js";
-
         // Configure AWS Region
         AWS.config.region = 'us-west-2'; // Will be overwritten by window.awsConfig.region if needed
 
@@ -198,15 +231,45 @@
         const logoutBtn = document.getElementById('logout-btn');
         const loadingSpinner = document.getElementById('loading-spinner');
         const sendText = document.getElementById('send-text');
+        // Persist session ID in localStorage (survives page refresh)
+        // Generate new one only if not exists - this maintains conversation context
+        let sessionId = localStorage.getItem('chatSessionId');
+        if (!sessionId) {
+            sessionId = 'session-' + crypto.randomUUID();
+            localStorage.setItem('chatSessionId', sessionId);
+        }
+        // Use Access Token for AgentCore JWT authorization (has client_id claim)
+        // ID Token has 'aud' claim which doesn't match AgentCore's 'client_id' validation
+        let accessToken = localStorage.getItem('chatAccessToken');
+        let idToken = localStorage.getItem('chatIdToken'); // Keep for user ID extraction
+        let userId = null; // Will be extracted from ID Token (has 'sub' claim)
 
-        // State
-        let bedrockClient = null;
-        // Generate session ID with minimum 33 characters (AWS requirement)
-        let sessionId = 'session-' + crypto.randomUUID();
-        let idToken = localStorage.getItem('chatIdToken'); // Changed name to be clear
+        // Helper function to decode JWT and extract claims
+        function decodeJwt(token) {
+            try {
+                const parts = token.split('.');
+                if (parts.length !== 3) return null;
+                // Decode base64url payload
+                let payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+                // Add padding if needed
+                while (payload.length % 4) payload += '=';
+                const decoded = atob(payload);
+                return JSON.parse(decoded);
+            } catch (e) {
+                console.error('Failed to decode JWT:', e);
+                return null;
+            }
+        }
 
-        // Check for existing session
-        if (idToken) {
+        // Extract user ID from JWT token
+        function extractUserId(token) {
+            const claims = decodeJwt(token);
+            return claims ? claims.sub : null;
+        }
+
+        // Check for existing session (need both access token for API and id token for user info)
+        if (accessToken && idToken) {
+            userId = extractUserId(idToken);
             showChatInterface();
         } else {
             loginScreen.classList.remove('hidden');
@@ -217,39 +280,20 @@
             signupScreen.classList.add('hidden');
             verifyScreen.classList.add('hidden');
             document.getElementById('app-interface').classList.remove('hidden');
-            
-            // Initialize Bedrock Client
-            initBedrockClient();
+
+            // Update side panel with session info
+            updateSidePanel();
         }
 
-        async function initBedrockClient() {
-            try {
-                if (!idToken) return;
+        function updateSidePanel() {
+            const agentArn = window.awsConfig?.agentRuntimeArn || 'Not configured';
+            const maskedUserId = userId ? `${userId.substring(0, 8)}...` : 'Not authenticated';
+            const memoryNamespace = userId ? `/newsletter/preferences/${userId.substring(0, 8)}...` : 'N/A';
 
-                const region = window.awsConfig.region || 'us-west-2';
-                const userPoolId = window.awsConfig.userPoolId;
-                const identityPoolId = window.awsConfig.identityPoolId;
-
-                const loginProvider = `cognito-idp.${region}.amazonaws.com/${userPoolId}`;
-                
-                const credentials = fromCognitoIdentityPool({
-                    clientConfig: { region },
-                    identityPoolId,
-                    logins: {
-                        [loginProvider]: idToken
-                    }
-                });
-
-                bedrockClient = new BedrockAgentCoreClient({
-                    region,
-                    credentials
-                });
-
-                console.log("Bedrock AgentCore Client Initialized");
-
-            } catch (e) {
-                console.error("Failed to init Bedrock client", e);
-            }
+            document.getElementById('side-panel-agent-arn').textContent = agentArn;
+            document.getElementById('side-panel-user-id').textContent = maskedUserId;
+            document.getElementById('side-panel-memory-ns').textContent = memoryNamespace;
+            document.getElementById('side-panel-session-id').textContent = sessionId.substring(0, 20) + '...';
         }
 
         // --- Authentication Logic ---
@@ -273,8 +317,16 @@
                 };
 
                 const response = await cognito.initiateAuth(params).promise();
+                // Store both tokens:
+                // - Access Token: For AgentCore API (has client_id claim)
+                // - ID Token: For extracting user info (has sub claim)
+                accessToken = response.AuthenticationResult.AccessToken;
                 idToken = response.AuthenticationResult.IdToken;
+                localStorage.setItem('chatAccessToken', accessToken);
                 localStorage.setItem('chatIdToken', idToken);
+
+                // Extract user ID from ID Token (has 'sub' claim)
+                userId = extractUserId(idToken);
 
                 errorDiv.classList.add('hidden');
                 showChatInterface();
@@ -346,10 +398,6 @@
             const message = userInput.value.trim();
             if (!message) return;
 
-            if (!bedrockClient) {
-                await initBedrockClient();
-            }
-
             // Add user message
             addMessage(message, 'user');
             userInput.value = '';
@@ -361,25 +409,43 @@
 
             try {
                 const agentRuntimeArn = window.awsConfig.agentRuntimeArn;
+                const region = window.awsConfig.region || 'us-west-2';
 
                 if (!agentRuntimeArn) {
                     throw new Error("Agent Runtime ARN not configured");
                 }
 
-                // Prepare payload as JSON
-                const payload = JSON.stringify({ prompt: message });
-                const payloadBytes = new TextEncoder().encode(payload);
+                if (!accessToken) {
+                    throw new Error("Not authenticated - please sign in");
+                }
 
-                // AgentCore uses the runtime ARN directly, no aliases needed
-                const command = new InvokeAgentRuntimeCommand({
-                    agentRuntimeArn: agentRuntimeArn,
-                    runtimeSessionId: sessionId,
-                    payload: payloadBytes,
-                    contentType: "application/json",
-                    accept: "application/json"
+                // Build the AgentCore endpoint URL (like the AWS sample)
+                // Format: https://bedrock-agentcore.{region}.amazonaws.com/runtimes/{arn}/invocations?qualifier=DEFAULT
+                const encodedArn = encodeURIComponent(agentRuntimeArn);
+                const url = `https://bedrock-agentcore.${region}.amazonaws.com/runtimes/${encodedArn}/invocations?qualifier=DEFAULT`;
+
+                console.log('Invoking agent at:', url);
+
+                // Use raw fetch() with Authorization header (like AWS sample)
+                // IMPORTANT: Use Access Token (has client_id claim), not ID Token (has aud claim)
+                // AgentCore JWT authorizer validates against client_id claim
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`,
+                        'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': sessionId,
+                        'X-Amzn-Trace-Id': `trace-${Date.now()}`
+                    },
+                    body: JSON.stringify({
+                        prompt: message
+                    })
                 });
 
-                const result = await bedrockClient.send(command);
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Agent request failed (${response.status}): ${errorText}`);
+                }
 
                 // Streaming response handling
                 // AgentCore returns Server-Sent Events (SSE) format: data: {"data": "text"}\n
@@ -387,9 +453,9 @@
                 let currentTextBlock = '';
                 let currentWorkingTool = null;
 
-                if (result.response) {
+                if (response.body) {
                     // The response is a ReadableStream with SSE format
-                    const reader = result.response.getReader();
+                    const reader = response.body.getReader();
                     const decoder = new TextDecoder('utf-8');
                     let buffer = '';
 
@@ -832,7 +898,9 @@
         });
 
         logoutBtn.addEventListener('click', () => {
+            localStorage.removeItem('chatAccessToken');
             localStorage.removeItem('chatIdToken');
+            localStorage.removeItem('chatSessionId'); // Clear session on logout for fresh start
             location.reload();
         });
 

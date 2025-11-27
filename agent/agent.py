@@ -7,12 +7,14 @@ import sys
 import json
 import logging
 import uuid
+import base64
+from typing import Optional
 
 # Add current directory to path
 sys.path.append(os.path.dirname(__file__))
 
 # Third-party imports
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from bedrock_agentcore.runtime import BedrockAgentCoreApp, BedrockAgentCoreContext
 from bedrock_agentcore.memory import MemoryClient
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands import Agent
@@ -247,6 +249,55 @@ NOTE: Never share ARN or other sensitive information in your response.
 ════════════════════════════════════════════════
 """
 
+def get_user_id_from_jwt() -> Optional[str]:
+    """
+    Extract user ID (sub claim) from the validated JWT in the Authorization header.
+
+    AgentCore has already validated the JWT signature before the request reaches
+    this agent, so we can safely decode the payload to extract claims without
+    re-validating. This provides secure per-user memory isolation.
+
+    Returns:
+        The Cognito user ID (sub claim) if present, None otherwise.
+    """
+    try:
+        headers = BedrockAgentCoreContext.get_request_headers()
+        if not headers:
+            logger.debug("No request headers available in context")
+            return None
+
+        auth_header = headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            logger.debug("No Bearer token in Authorization header")
+            return None
+
+        token = auth_header.split(" ")[1]
+
+        # JWT structure: header.payload.signature
+        # Decode payload (already validated by AgentCore)
+        parts = token.split(".")
+        if len(parts) != 3:
+            logger.warning("Invalid JWT structure")
+            return None
+
+        payload_b64 = parts[1]
+        # Handle base64url encoding (replace - with +, _ with /)
+        payload_b64 = payload_b64.replace("-", "+").replace("_", "/")
+        # Add padding if needed
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+
+        payload = json.loads(base64.b64decode(payload_b64))
+        user_id = payload.get("sub")
+
+        if user_id:
+            logger.info(f"Extracted user ID from JWT: {user_id[:8]}...")
+        return user_id
+
+    except Exception as e:
+        logger.warning(f"Failed to extract user ID from JWT: {e}")
+        return None
+
+
 # Instantiate Bedrock AgentCore
 app = BedrockAgentCoreApp()
 
@@ -278,11 +329,22 @@ async def invoke_agent(payload, context):
 
         logger.info(f"Received prompt: {prompt}")
 
-        # Use consistent actor and session IDs for persistent memory
-        actor_id = ACTOR_ID
-        # Use consistent session ID for memory persistence (remembering user preferences, name, etc.)
-        # If not configured, generate a random one (no persistence across invocations)
-        session_id = SESSION_ID if SESSION_ID else str(uuid.uuid4())
+        # Extract user ID from JWT for per-user memory isolation
+        # AgentCore validates the JWT before the request reaches us, so the sub claim is trustworthy
+        user_id = get_user_id_from_jwt()
+
+        if user_id:
+            # Per-user memory isolation: use Cognito sub as both actor and session
+            # This ensures each authenticated user has their own memory namespace
+            actor_id = user_id
+            session_id = user_id  # Single session per user (Option 1)
+            logger.info(f"User authenticated via JWT, using per-user memory: {user_id[:8]}...")
+        else:
+            # Fallback for CLI/EventBridge invocations (no JWT)
+            # Uses static values from Secrets Manager for shared memory
+            actor_id = ACTOR_ID
+            session_id = SESSION_ID if SESSION_ID else str(uuid.uuid4())
+            logger.info("No JWT found, using default actor/session (CLI or scheduled invocation)")
 
         # Initialize memory client and hooks (replaces buggy SessionManager)
         memory_client = MemoryClient(region_name=AWS_REGION)

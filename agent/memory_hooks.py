@@ -111,9 +111,13 @@ class LongTermMemoryHookProvider(HookProvider):
 
             user_query = None
             for block in content:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    user_query = block.get("text", "")
-                    break
+                if isinstance(block, dict):
+                    # Skip toolResult blocks - only process actual user text
+                    if "toolResult" in block:
+                        return  # This is a tool result, not a user query
+                    if "text" in block:
+                        user_query = block.get("text", "")
+                        break
                 elif isinstance(block, str):
                     user_query = block
                     break
@@ -164,7 +168,7 @@ class LongTermMemoryHookProvider(HookProvider):
 
                 # Update the message content with context
                 for i, block in enumerate(messages[-1]["content"]):
-                    if isinstance(block, dict) and block.get("type") == "text":
+                    if isinstance(block, dict) and "text" in block:
                         original_text = block["text"]
                         messages[-1]["content"][i]["text"] = (
                             f"=== MEMORY CONTEXT ===\n{context_text}\n=== END CONTEXT ===\n\n{original_text}"
@@ -185,9 +189,28 @@ class LongTermMemoryHookProvider(HookProvider):
             messages = event.agent.messages
 
             if not messages:
+                logger.warning("No messages in agent for memory save")
                 return
 
-            # Extract the latest user query and assistant response
+            # Debug: Log message structure
+            logger.info(f"AfterInvocationEvent: {len(messages)} messages in conversation")
+            for i, msg in enumerate(messages[-4:]):  # Last 4 messages
+                role = msg.get("role", "unknown")
+                content = msg.get("content", [])
+                content_types = []
+                for block in content if isinstance(content, list) else [content]:
+                    if isinstance(block, dict):
+                        content_types.append(block.get("type", "unknown"))
+                    else:
+                        content_types.append(type(block).__name__)
+                logger.info(f"  Message {i}: role={role}, content_types={content_types}")
+
+            # Extract the latest user query and final assistant response
+            # Message structure in Strands:
+            # - User message: [{"text": "..."}]
+            # - Assistant with tools: [{"text": "..."}, {"toolUse": {...}}]
+            # - Tool result (as user): [{"toolResult": {...}}]
+            # - Final assistant: [{"text": "..."}]
             customer_query = None
             agent_response = None
 
@@ -196,25 +219,32 @@ class LongTermMemoryHookProvider(HookProvider):
                 content = msg.get("content", [])
 
                 if role == "assistant" and not agent_response:
-                    # Extract text from assistant response
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            agent_response = block.get("text", "")
-                            break
+                    # Extract text from assistant response - handle multiple text blocks
+                    # Skip toolUse blocks, only get text
+                    text_parts = []
+                    for block in content if isinstance(content, list) else [content]:
+                        if isinstance(block, dict) and "text" in block:
+                            text_parts.append(block.get("text", ""))
                         elif isinstance(block, str):
-                            agent_response = block
-                            break
+                            text_parts.append(block)
+                    if text_parts:
+                        agent_response = " ".join(text_parts)
 
                 elif role == "user" and not customer_query:
-                    # Extract text from user query (remove context prefix if present)
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            text = block.get("text", "")
-                            # Remove memory context if we added it
-                            if "=== END CONTEXT ===" in text:
-                                text = text.split("=== END CONTEXT ===")[-1].strip()
-                            customer_query = text
-                            break
+                    # Skip tool result messages (they have toolResult, not text)
+                    # Only extract actual user queries
+                    for block in content if isinstance(content, list) else [content]:
+                        if isinstance(block, dict):
+                            # Skip toolResult blocks - these are tool outputs, not user queries
+                            if "toolResult" in block:
+                                break  # This is a tool result message, skip it
+                            if "text" in block:
+                                text = block.get("text", "")
+                                # Remove memory context if we added it
+                                if "=== END CONTEXT ===" in text:
+                                    text = text.split("=== END CONTEXT ===")[-1].strip()
+                                customer_query = text
+                                break
                         elif isinstance(block, str):
                             customer_query = block
                             break
@@ -223,7 +253,7 @@ class LongTermMemoryHookProvider(HookProvider):
                     break
 
             if not customer_query or not agent_response:
-                logger.warning("Could not extract query/response for memory save")
+                logger.warning(f"Could not extract query/response for memory save. query={customer_query is not None}, response={agent_response is not None}")
                 return
 
             # Save to memory

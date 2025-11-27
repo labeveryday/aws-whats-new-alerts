@@ -20,17 +20,17 @@ graph TD
     User[User Browser] -->|HTTPS| CF[CloudFront]
     CF --> S3[S3 Static Hosting]
     User -->|Auth| Cognito[Cognito User Pool]
-    User -->|Get Creds| Identity[Cognito Identity Pool]
-    
+
     subgraph "Streaming Flow"
-        Identity -->|Temp IAM Creds| SDK[AWS SDK v3]
-        SDK -->|Streaming Invocation| Runtime[AgentCore Runtime]
+        Cognito -->|JWT Token| Fetch[Browser fetch]
+        Fetch -->|Authorization: Bearer JWT| Runtime[AgentCore Runtime]
+        Runtime -->|Validate JWT| Cognito
     end
-    
+
     subgraph "Backend"
         Secrets[Secrets Manager] -->|Config| Runtime
         Runtime -->|Execute| Agent[Agent Logic]
-        Agent -->|Deduplication| Memory[AgentCore Memory]
+        Agent -->|Per-User Memory| Memory[AgentCore Memory]
         Agent -->|Publish| SNS[SNS Topic]
         Agent -->|Schedule| Scheduler[EventBridge Scheduler]
         Scheduler -->|Trigger| Runtime
@@ -60,30 +60,28 @@ python configure_secret.py --email your-email@example.com
 2. **Local file** (`agent/agent_config.env`) - Deployment config with role ARN for `agentcore configure`
 
 ### 3. Deploy Agent
-Deploy the agent to AgentCore Runtime.
+Deploy the agent to AgentCore Runtime with JWT authorization for per-user memory.
 
 ```bash
 cd ../agent
 
-# Configure agent using values from agent_config.env
-# Option A: Use explicit values (copy from agent_config.env)
-agentcore configure -e agent.py \
-  --region us-west-2 \
-  --name aws_newsletter_bot \
-  --execution-role arn:aws:iam::ACCOUNT:role/aws-newsletter-agentcore-runtime-role
-
-# Option B: Source the env file and use variables
+# Source the env file (includes JWT authorizer config)
 source agent_config.env
+
+# Configure agent with JWT authorization
+# This enables per-user memory isolation using Cognito authentication
 agentcore configure -e agent.py \
   --region $AWS_REGION \
   --name $AGENT_NAME \
-  --execution-role $AGENTCORE_RUNTIME_ROLE_ARN
+  --execution-role $AGENTCORE_RUNTIME_ROLE_ARN \
+  --authorizer-config "$AUTHORIZER_CONFIG" \
+  --request-header-allowlist "Authorization"
 
 # Launch to AWS with SECRET_NAME environment variable
 agentcore launch --env SECRET_NAME=$SECRET_NAME --env AWS_REGION=$AWS_REGION
 ```
 
-**Note:** The `agentcore configure` command requires `--name` and `--execution-role` parameters. Get these values from the `agent_config.env` file created in step 2.
+**Note:** The `--authorizer-config` enables AgentCore to validate Cognito JWTs. This allows each user to have their own memory namespace, enabling personalization (remembering names, preferences) without cross-user data leakage.
 
 #### Interactive Prompts During agentcore configure
 
@@ -95,8 +93,6 @@ During `agentcore configure`, you'll be prompted to select:
 | Deployment type | `1` - Direct Code Deploy (recommended) |
 | Python runtime | `4` - PYTHON_3_13 |
 | S3 bucket | Press Enter to auto-create |
-| OAuth authorizer | `no` (use IAM) |
-| Request header allowlist | `no` (use defaults) |
 | Memory configuration | Select existing memory (e.g., `1`) |
 
 ### 4. Autonomous Self-Scheduling (The "Magic" Step)
@@ -172,10 +168,11 @@ This pattern provides:
 - **Conversation Context**: Large sliding window (100 messages) for complex operations
 
 ### Streaming & Direct Invocation
-The agent supports **Streaming Responses** via AWS SDK v3 (`bedrock-agentcore:InvokeAgentRuntime`). This architecture:
+The agent supports **Streaming Responses** via direct HTTP calls to the AgentCore endpoint. This architecture:
 1. **Bypasses API Gateway Timeouts**: Allows for long-running generations by keeping the stream open.
-2. **Secures Access**: The browser uses temporary IAM credentials from Cognito Identity Pool to sign requests directly.
-3. **Real-Time UI**: The chat interface updates in real-time as the agent "thinks" and generates tokens.
+2. **JWT-Based Auth**: The browser sends the Cognito ID token directly to AgentCore, which validates it and passes user identity to the agent.
+3. **Per-User Memory**: Each user's JWT `sub` claim becomes their actor_id, ensuring memory isolation across users.
+4. **Real-Time UI**: The chat interface updates in real-time as the agent "thinks" and generates tokens.
 
 ## File Structure
 

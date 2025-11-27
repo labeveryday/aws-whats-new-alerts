@@ -40,8 +40,22 @@ def update_secret(secret_name: str, config: Dict[str, str], region: str):
     print("✅ Secret updated successfully")
 
 
-def write_minimal_env_file(config: Dict[str, str], secret_name: str, output_path: str = "../agent/agent_config.env"):
+def write_minimal_env_file(config: Dict[str, str], secret_name: str, outputs: Dict[str, str], region: str, output_path: str = "../agent/agent_config.env"):
     """Write minimal .env file for local CLI deployment tools"""
+
+    # Build JWT authorizer config for AgentCore
+    user_pool_id = outputs.get('UserPoolId', '')
+    user_pool_client_id = outputs.get('UserPoolClientId', '')
+    discovery_url = f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}/.well-known/openid-configuration" if user_pool_id else ""
+
+    # Create authorizer config JSON (single line for CLI)
+    authorizer_config = json.dumps({
+        "customJWTAuthorizer": {
+            "discoveryUrl": discovery_url,
+            "allowedClients": [user_pool_client_id]
+        }
+    }) if user_pool_id and user_pool_client_id else ""
+
     env_content = f"""# Deployment Configuration
 # Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 # This file is used by the local agentcore CLI for deployment.
@@ -51,6 +65,13 @@ AGENTCORE_RUNTIME_ROLE_ARN={config.get('AGENTCORE_RUNTIME_ROLE_ARN', '')}
 AWS_REGION={config.get('AWS_REGION', 'us-west-2')}
 AGENT_NAME={config.get('AGENT_NAME', 'aws_newsletter_bot')}
 SECRET_NAME={secret_name}
+
+# JWT Authorization Config (for per-user memory isolation)
+# This enables AgentCore to validate Cognito JWTs and pass user identity to the agent
+COGNITO_USER_POOL_ID={user_pool_id}
+COGNITO_CLIENT_ID={user_pool_client_id}
+COGNITO_DISCOVERY_URL={discovery_url}
+AUTHORIZER_CONFIG='{authorizer_config}'
 """
     # Ensure directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -102,7 +123,7 @@ def main():
         # Determine path relative to this script
         script_dir = os.path.dirname(os.path.abspath(__file__))
         env_path = os.path.join(os.path.dirname(script_dir), 'agent', 'agent_config.env')
-        write_minimal_env_file(config, secret_name, env_path)
+        write_minimal_env_file(config, secret_name, outputs, args.region, env_path)
         
         print(f"\n📋 Configuration Updated:")
         print(f"   - Runtime Secret: {secret_name}")

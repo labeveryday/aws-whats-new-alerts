@@ -93,7 +93,7 @@ destroy_agent() {
     cd "$SCRIPT_DIR/agent"
 
     # Check if agent is configured
-    if [ -f ".bedrock_agentcore/config.yaml" ]; then
+    if [ -f ".bedrock_agentcore.yaml" ]; then
         echo "Destroying agent runtime..."
         agentcore destroy --force || print_warning "Agent destroy failed (may not exist)"
     else
