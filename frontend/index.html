@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="vendor/tailwind.min.css">
     <script src="vendor/aws-sdk-2.1456.0.min.js"></script>
     <script src="vendor/marked.min.js"></script>
+    <script src="vendor/dompurify.min.js"></script>
     <style>
         /* Custom styles for Markdown content within bubbles */
         .markdown-content ul { list-style-type: disc; padding-left: 1.5em; margin-top: 0.5em; margin-bottom: 0.5em; }
@@ -621,7 +622,7 @@
                 }
             }
 
-            bubble.innerHTML = html;
+            bubble.innerHTML = DOMPurify.sanitize(html);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
@@ -725,7 +726,7 @@
                     gfm: true
                 });
                 try {
-                    element.innerHTML = marked.parse(cleanText);
+                    element.innerHTML = DOMPurify.sanitize(marked.parse(cleanText));
                 } catch (e) {
                     console.error("Markdown parsing failed", e);
                     element.textContent = cleanText;

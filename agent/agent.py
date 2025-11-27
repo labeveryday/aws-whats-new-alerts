@@ -33,13 +33,16 @@ logger = logging.getLogger(__name__)
 # Ensure logs are flushed immediately
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-# Load configuration from AWS Secrets Manager
-# This replaces local .env files for production security
-SECRET_NAME_PREFIX = "aws-newsletter/agent-config"
+# Load configuration from AWS Secrets Manager (if configured)
+# Pass SECRET_NAME via: agentcore launch --env SECRET_NAME=your-secret-name
 AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
+SECRET_NAME = os.getenv("SECRET_NAME")
 
-logger.info(f"Attempting to load configuration from secret: {SECRET_NAME_PREFIX} in {AWS_REGION}")
-load_secrets(SECRET_NAME_PREFIX, AWS_REGION)
+if SECRET_NAME:
+    logger.info(f"Loading configuration from secret: {SECRET_NAME} in {AWS_REGION}")
+    load_secrets(SECRET_NAME, AWS_REGION)
+else:
+    logger.info("SECRET_NAME not set, skipping Secrets Manager load (using environment variables directly)")
 
 # Configuration
 AWS_URL = "https://aws.amazon.com/about-aws/whats-new/recent/feed/"

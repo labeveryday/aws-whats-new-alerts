@@ -6,12 +6,12 @@ from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
-def load_secrets(secret_name_prefix: str = "aws-newsletter-prod/agent-config", region_name: str = "us-west-2"):
+def load_secrets(secret_name: str, region_name: str = "us-west-2"):
     """
     Load configuration from AWS Secrets Manager into environment variables.
-    
+
     Args:
-        secret_name_prefix: The name (or prefix) of the secret to retrieve.
+        secret_name: The name of the secret to retrieve (required).
         region_name: AWS region where the secret is stored.
     """
     session = boto3.session.Session()
@@ -25,11 +25,11 @@ def load_secrets(secret_name_prefix: str = "aws-newsletter-prod/agent-config", r
     
     try:
         get_secret_value_response = client.get_secret_value(
-            SecretId=secret_name_prefix
+            SecretId=secret_name
         )
     except ClientError as e:
         # If secret not found or permission denied, log warning and return
-        logger.warning(f"Could not retrieve secret '{secret_name_prefix}': {e}")
+        logger.warning(f"Could not retrieve secret '{secret_name}': {e}")
         return
 
     if 'SecretString' in get_secret_value_response:

@@ -7,11 +7,10 @@ Updates the agent configuration secret with CloudFormation stack outputs.
 import boto3
 import argparse
 import json
+import os
+import sys
 from datetime import datetime
 from typing import Dict, Optional
-
-
-import os
 
 def get_stack_outputs(stack_name: str, region: str) -> Dict[str, str]:
     """Retrieve CloudFormation stack outputs"""
@@ -41,7 +40,7 @@ def update_secret(secret_name: str, config: Dict[str, str], region: str):
     print("✅ Secret updated successfully")
 
 
-def write_minimal_env_file(config: Dict[str, str], output_path: str = "../agent/agent_config.env"):
+def write_minimal_env_file(config: Dict[str, str], secret_name: str, output_path: str = "../agent/agent_config.env"):
     """Write minimal .env file for local CLI deployment tools"""
     env_content = f"""# Deployment Configuration
 # Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -51,6 +50,7 @@ def write_minimal_env_file(config: Dict[str, str], output_path: str = "../agent/
 AGENTCORE_RUNTIME_ROLE_ARN={config.get('AGENTCORE_RUNTIME_ROLE_ARN', '')}
 AWS_REGION={config.get('AWS_REGION', 'us-west-2')}
 AGENT_NAME={config.get('AGENT_NAME', 'aws_newsletter_bot')}
+SECRET_NAME={secret_name}
 """
     # Ensure directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -76,10 +76,7 @@ def main():
         
         secret_name = outputs.get('AgentConfigSecretName')
         if not secret_name:
-            # Fallback to constructed name if not in outputs (for older stacks)
-            # Note: Stack internal name is 'aws-newsletter' not 'aws-newsletter-prod'
-            secret_name = "aws-newsletter/agent-config"
-            print(f"⚠️  AgentConfigSecretName not found in outputs. Trying default: {secret_name}")
+            raise Exception("AgentConfigSecretName not found in stack outputs. Ensure stack is deployed correctly.")
 
         # Build configuration dictionary
         config = {
@@ -105,7 +102,7 @@ def main():
         # Determine path relative to this script
         script_dir = os.path.dirname(os.path.abspath(__file__))
         env_path = os.path.join(os.path.dirname(script_dir), 'agent', 'agent_config.env')
-        write_minimal_env_file(config, env_path)
+        write_minimal_env_file(config, secret_name, env_path)
         
         print(f"\n📋 Configuration Updated:")
         print(f"   - Runtime Secret: {secret_name}")
@@ -118,5 +115,5 @@ def main():
 
 
 if __name__ == '__main__':
-    exit(main())
+    sys.exit(main())
 

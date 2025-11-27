@@ -175,24 +175,20 @@ configure_secret.py Flow:
 ```bash
 cd ../agent
 
-# Configure agent with explicit parameters from agent_config.env
-agentcore configure -e agent.py \
-  --region us-west-2 \
-  --name aws_newsletter_bot \
-  --execution-role arn:aws:iam::ACCOUNT:role/aws-newsletter-agentcore-runtime-role
-
-# Or source the env file and use variables:
+# Source the env file generated in step 2
 source agent_config.env
+
+# Configure agent
 agentcore configure -e agent.py \
   --region $AWS_REGION \
   --name $AGENT_NAME \
   --execution-role $AGENTCORE_RUNTIME_ROLE_ARN
 
-# Launch to AWS
-agentcore launch
+# Launch with SECRET_NAME environment variable
+agentcore launch --env SECRET_NAME=$SECRET_NAME --env AWS_REGION=$AWS_REGION
 ```
 
-**Note:** The `agent_config.env` file generated in step 2 contains the `AGENTCORE_RUNTIME_ROLE_ARN` and `AGENT_NAME` values needed for these parameters.
+**Note:** The `agent_config.env` file generated in step 2 contains all required values including `SECRET_NAME` for runtime configuration loading.
 
 ### 4. Deploy Frontend (1 minute)
 Generates config and uploads the Chat UI to S3.
@@ -241,8 +237,13 @@ aws-whats-new-alerts/
 │   ├── deploy_frontend.py         # Deploys Chat UI to S3 & Invalidates CloudFront
 │   └── lambda/                    # (Optional/Deprecated) Lambda Functions
 ├── frontend/                      # Web Chat UI
-│   ├── index.html                 # Single-page chat app (Tailwind + Markdown + AWS SDK v3)
-│   └── config.js                  # Generated config
+│   ├── index.html                 # Single-page chat app (self-hosted dependencies)
+│   ├── config.js                  # Generated config (gitignored)
+│   └── vendor/                    # Vendored JS/CSS (no external CDNs)
+│       ├── tailwind.min.css       # Tailwind CSS
+│       ├── aws-sdk-*.min.js       # AWS SDK v2 & v3 bundle
+│       ├── marked.min.js          # Markdown parser
+│       └── dompurify.min.js       # HTML sanitization
 ├── invoke_agent.py                # Manual testing script
 └── requirements.txt
 ```

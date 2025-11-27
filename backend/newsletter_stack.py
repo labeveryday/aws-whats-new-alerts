@@ -184,9 +184,7 @@ class NewsletterStack(Stack):
                     "logs:CreateLogStream",
                     "logs:DescribeLogGroups",
                     "logs:DescribeLogStreams",
-                    "logs:CreateLogStream",
                     "logs:PutLogEvents",
-                    "logs:PutLogEvents"
                 ],
                 resources=["*"]
             )
