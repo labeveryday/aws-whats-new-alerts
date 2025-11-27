@@ -13,14 +13,14 @@ sys.path.append(os.path.dirname(__file__))
 
 # Third-party imports
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
-from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig, RetrievalConfig
-from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
+from bedrock_agentcore.memory import MemoryClient
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands import Agent
 from strands_tools import current_time
 
 # Local imports
 from secrets_loader import load_secrets
+from memory_hooks import LongTermMemoryHookProvider
 
 # Configure logging to stdout
 logging.basicConfig(
@@ -64,6 +64,17 @@ SYSTEM_PROMPT = f"""
 You are an AWS Newsletter Agent that creates professional daily email newsletters about AWS announcements.
 
 CORE MISSION: Generate intelligent, ranked newsletters focused on **Agentic AI** and AI/ML-related AWS announcements.
+
+════════════════════════════════════════════════
+PERSONALIZATION & MEMORY
+════════════════════════════════════════════════
+
+Your messages may include a `=== MEMORY CONTEXT ===` section with information from previous conversations.
+
+- If you see user information (like their name), address them personally
+- If the user tells you their name, remember it for future conversations
+- Be warm and personable - greet returning users by name
+- If no name is found, you can ask for it naturally during conversation
 
 SELF-DISCOVERY & SCHEDULING:
 You are an autonomous agent. If the user asks you to schedule yourself or create a recurring task:
@@ -273,43 +284,29 @@ async def invoke_agent(payload, context):
         # If not configured, generate a random one (no persistence across invocations)
         session_id = SESSION_ID if SESSION_ID else str(uuid.uuid4())
 
-        # Create agent instance with memory configuration
-        # Note: We create a new instance per invocation to ensure proper session isolation
-        memory_config = AgentCoreMemoryConfig(
+        # Initialize memory client and hooks (replaces buggy SessionManager)
+        memory_client = MemoryClient(region_name=AWS_REGION)
+
+        memory_hooks = LongTermMemoryHookProvider(
+            memory_client=memory_client,
             memory_id=MEMORY_ID,
-            session_id=session_id,
             actor_id=actor_id,
-            retrieval_config={
-                "/newsletter/articles": RetrievalConfig(
-                    top_k=50,
-                    relevance_score=0.8,
-                    initialization_query=f"What AWS articles have been processed in recent newsletters since {CUTOFF_DATE}? List all article URLs and publication dates."
-                ),
-                "/newsletter/preferences": RetrievalConfig(
-                    top_k=20,
-                    relevance_score=0.7
-                )
-            }
+            session_id=session_id,
+            top_k=50,
+            relevance_score=0.7
         )
 
-        # Get region from environment
-        region = AWS_REGION
-
-        session_manager = AgentCoreMemorySessionManager(
-            agentcore_memory_config=memory_config,
-            region_name=region
-        )
-
+        # Larger window for more context during complex operations
         conversation_manager = SlidingWindowConversationManager(
             should_truncate_results=True,
-            window_size=40,
+            window_size=100,
         )
 
         agent = Agent(
             system_prompt=SYSTEM_PROMPT,
             tools=[current_time],
             load_tools_from_directory=True,  # Loads aws_news_tools.py, sns_tools.py, and create_events.py
-            session_manager=session_manager,
+            hooks=[memory_hooks],
             conversation_manager=conversation_manager
         )
 

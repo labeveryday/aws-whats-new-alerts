@@ -155,6 +155,22 @@ This agent implements a "Self-Aware" pattern to solve infrastructure circular de
 3. **Solution**: Agent uses `find_agent_id` tool at runtime to look up "aws_newsletter_bot" and retrieve its own ARN dynamically.
 4. **Benefit**: Zero manual configuration or post-deployment env var updates required.
 
+### Long-Term Memory with Hooks
+The agent uses **AgentCore Memory** for long-term persistence via Strands hooks (`memory_hooks.py`):
+
+1. **Context Retrieval**: Before processing each user message, the `LongTermMemoryHookProvider` retrieves relevant memories (processed articles, user preferences) and prepends them to the query.
+
+2. **Event Persistence**: After each invocation, the hook automatically saves the conversation to AgentCore Memory for future reference.
+
+3. **Namespaces**: Memory is organized into namespaces:
+   - `/newsletter/articles/{actorId}` - Semantic memory for article deduplication
+   - `/newsletter/preferences/{actorId}/{sessionId}` - User preferences and settings
+
+This pattern provides:
+- **Article Deduplication**: Remembers which articles have been processed
+- **User Preferences**: Remembers user's name, preferences across sessions
+- **Conversation Context**: Large sliding window (100 messages) for complex operations
+
 ### Streaming & Direct Invocation
 The agent supports **Streaming Responses** via AWS SDK v3 (`bedrock-agentcore:InvokeAgentRuntime`). This architecture:
 1. **Bypasses API Gateway Timeouts**: Allows for long-running generations by keeping the stream open.
@@ -166,6 +182,7 @@ The agent supports **Streaming Responses** via AWS SDK v3 (`bedrock-agentcore:In
 ```
 agent/
 ├── agent.py                    # Main agent code (production)
+├── memory_hooks.py             # Long-term memory integration via Strands hooks
 ├── secrets_loader.py           # Helper to load config from Secrets Manager
 ├── README.md                   # This file
 ├── requirements.txt            # Python dependencies

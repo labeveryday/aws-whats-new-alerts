@@ -13,9 +13,13 @@ from botocore.exceptions import ClientError
 load_dotenv()
 
 
-# Get the configured newsletter topic from environment
-NEWSLETTER_TOPIC_ARN = os.getenv("SNS_TOPIC_ARN")
-AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
+def _get_config():
+    """Get configuration at call time (after secrets are loaded)."""
+    return {
+        "topic_arn": os.getenv("SNS_TOPIC_ARN"),
+        "region": os.getenv("AWS_REGION"),
+        "email": os.getenv("NEWSLETTER_EMAIL")
+    }
 
 
 @tool
@@ -32,26 +36,30 @@ def publish_to_newsletter_topic(subject: str, message: str) -> str:
     Returns:
         Publication result with message ID
     """
-    if not NEWSLETTER_TOPIC_ARN:
+    config = _get_config()
+    topic_arn = config["topic_arn"]
+    region = config["region"]
+
+    if not topic_arn:
         return "❌ Error: Newsletter topic not configured (SNS_TOPIC_ARN missing)"
-    
+
     # Validate subject length (SNS email has ~100 char limit)
     if len(subject) > 100:
         return f"❌ Error: Subject too long ({len(subject)} chars). Keep under 100 characters for email delivery."
-    
-    client = boto3.client("sns", region_name=AWS_REGION)
-    
+
+    client = boto3.client("sns", region_name=region)
+
     try:
         # Publish to the configured newsletter topic only
         response = client.publish(
-            TopicArn=NEWSLETTER_TOPIC_ARN,
+            TopicArn=topic_arn,
             Subject=subject,
             Message=message
         )
-        
+
         message_id = response["MessageId"]
-        topic_name = NEWSLETTER_TOPIC_ARN.split(":")[-1]
-        
+        topic_name = topic_arn.split(":")[-1]
+
         result = {
             "status": "success",
             "message_id": message_id,
@@ -59,7 +67,7 @@ def publish_to_newsletter_topic(subject: str, message: str) -> str:
             "subject": subject,
             "message_length": len(message),
             "subject_length": len(subject),
-            "recipient_email": os.getenv("NEWSLETTER_EMAIL", "configured subscribers")
+            "recipient_email": config["email"] or "configured subscribers"
         }
         
         return json.dumps(result, indent=2)
@@ -74,17 +82,20 @@ def publish_to_newsletter_topic(subject: str, message: str) -> str:
 @tool
 def get_newsletter_topic_info() -> str:
     """Get information about the configured newsletter topic (read-only).
-    
+
     Returns basic info about the newsletter topic without exposing other topics.
     """
-    if not NEWSLETTER_TOPIC_ARN:
+    config = _get_config()
+    topic_arn = config["topic_arn"]
+
+    if not topic_arn:
         return "❌ Newsletter topic not configured (SNS_TOPIC_ARN missing)"
-    
+
     return json.dumps({
-        "topic_arn": NEWSLETTER_TOPIC_ARN,
-        "topic_name": NEWSLETTER_TOPIC_ARN.split(":")[-1],
-        "region": AWS_REGION,
-        "recipient_email": os.getenv("NEWSLETTER_EMAIL", "Not configured"),
+        "topic_arn": topic_arn,
+        "topic_name": topic_arn.split(":")[-1],
+        "region": config["region"],
+        "recipient_email": config["email"] or "Not configured",
         "subject_limit": "100 characters (for email delivery)",
         "message_limit": "~256KB (but email may have lower practical limits)"
     }, indent=2)
