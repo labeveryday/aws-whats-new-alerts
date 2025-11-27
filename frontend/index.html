@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AWS Newsletter Agent</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1456.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Vendored dependencies (no external CDNs) -->
+    <link rel="stylesheet" href="vendor/tailwind.min.css">
+    <script src="vendor/aws-sdk-2.1456.0.min.js"></script>
+    <script src="vendor/marked.min.js"></script>
     <style>
         /* Custom styles for Markdown content within bubbles */
         .markdown-content ul { list-style-type: disc; padding-left: 1.5em; margin-top: 0.5em; margin-bottom: 0.5em; }
@@ -177,11 +178,8 @@
 
     <!-- App Logic -->
     <script type="module">
-        // Import specific browser-compatible modules from esm.sh with specific build flags
-        // &bundle=true ensures a self-contained bundle
-        // &external=fs,path,util excludes Node.js modules
-        import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from "https://esm.sh/@aws-sdk/client-bedrock-agentcore@3.937.0?target=es2022&bundle=true&external=fs,path,util";
-        import { fromCognitoIdentityPool } from "https://esm.sh/@aws-sdk/credential-providers@3.936.0?target=es2022&bundle=true&external=fs,path,util";
+        // Import from vendored AWS SDK v3 bundle (no external CDNs)
+        import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand, fromCognitoIdentityPool } from "./vendor/aws-sdk-v3-bundle.min.js";
 
         // Configure AWS Region
         AWS.config.region = 'us-west-2'; // Will be overwritten by window.awsConfig.region if needed

@@ -66,23 +66,34 @@ def generate_config(outputs, region, agent_arn=None):
 
 def upload_to_s3(bucket_name, region):
     s3 = boto3.client('s3', region_name=region)
-    
+
     # Use absolute path
     script_dir = os.path.dirname(os.path.abspath(__file__))
     frontend_dir = os.path.join(script_dir, '../frontend')
-    
-    for filename in os.listdir(frontend_dir):
-        filepath = os.path.join(frontend_dir, filename)
-        if os.path.isfile(filepath) and not filename.startswith('.'):
+
+    # Walk through all files including subdirectories (e.g., vendor/)
+    for root, dirs, files in os.walk(frontend_dir):
+        # Skip hidden directories
+        dirs[:] = [d for d in dirs if not d.startswith('.')]
+
+        for filename in files:
+            if filename.startswith('.'):
+                continue
+
+            filepath = os.path.join(root, filename)
+            # Create S3 key with relative path from frontend_dir
+            relative_path = os.path.relpath(filepath, frontend_dir)
+            s3_key = relative_path.replace(os.sep, '/')  # Ensure forward slashes for S3
+
             content_type, _ = mimetypes.guess_type(filename)
             if not content_type:
                 content_type = 'application/octet-stream'
-                
-            print(f"Uploading {filename} to s3://{bucket_name}/...")
+
+            print(f"Uploading {s3_key} to s3://{bucket_name}/...")
             with open(filepath, 'rb') as f:
                 s3.put_object(
                     Bucket=bucket_name,
-                    Key=filename,
+                    Key=s3_key,
                     Body=f,
                     ContentType=content_type
                 )
