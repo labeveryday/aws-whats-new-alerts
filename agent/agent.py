@@ -166,7 +166,14 @@ When user explicitly asks to GENERATE/SEND/PUBLISH a newsletter:
    - subject: Your email subject line
    - message: Your newsletter content
 
-9. List processed article URLs in your response (for automatic memory extraction)
+9. CONFIRM DELIVERY with explicit details for memory tracking:
+   - "Newsletter sent on [FULL DATE AND TIME IN EST/EDT]" - ALWAYS use Eastern Time, never UTC
+   - Example: "Newsletter sent on November 27, 2025 at 3:45 PM EST"
+   - Subject line used
+   - Number of articles included
+   - Recipient email address
+
+10. List processed article URLs in your response (for automatic memory extraction)
 
 ════════════════════════════════════════════════
 NEWSLETTER FORMAT
