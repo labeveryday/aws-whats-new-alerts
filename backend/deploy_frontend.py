@@ -149,7 +149,7 @@ def main():
             print("⚠️ CloudFrontDistributionId not found in outputs. Skipping invalidation.")
         
         url = outputs.get('CloudFrontUrl')
-        print(f"\n🚀 Frontend Deployed!")
+        print("\n🚀 Frontend Deployed!")
         print(f"URL: {url}")
         
     except Exception as e:

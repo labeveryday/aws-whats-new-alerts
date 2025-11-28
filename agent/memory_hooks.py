@@ -5,7 +5,7 @@ Uses AgentCore Memory directly via hooks instead of the buggy SessionManager.
 Based on: https://dev.to/aws-heroes/amazon-bedrock-agentcore-runtime-part-7-using-agentcore-long-term-memory-with-strands-agents-sdk-lb2
 """
 import logging
-from typing import Dict, List, Any
+from typing import Dict
 
 from strands.hooks import HookProvider, HookRegistry
 from strands.hooks.events import MessageAddedEvent, AfterInvocationEvent

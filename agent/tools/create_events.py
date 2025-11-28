@@ -158,7 +158,7 @@ def _build_cron(frequency: str, day_of_week: str, time: str) -> str:
     hour, minute = time.split(':')
     
     if frequency == "hourly":
-        return f"cron(0 * * * ? *)"
+        return "cron(0 * * * ? *)"
     elif frequency == "daily":
         return f"cron({minute} {hour} * * ? *)"
     elif frequency == "weekly":

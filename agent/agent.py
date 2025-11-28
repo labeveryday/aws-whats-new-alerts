@@ -423,7 +423,6 @@ async def invoke_agent(payload, context):
         # CRITICAL: Stream the response
         # This loop runs for as long as needed - no timeout!
         tool_active = False
-        current_tool_id = None
 
         async for item in agent.stream_async(prompt):
             if "event" in item:
@@ -433,8 +432,6 @@ async def invoke_agent(payload, context):
                 if "contentBlockStart" in event and \
                    "toolUse" in event["contentBlockStart"].get("start", {}):
                     tool_active = True
-                    tool_use = event["contentBlockStart"]["start"]["toolUse"]
-                    current_tool_id = tool_use.get("toolUseId")
                     yield json.dumps({"event": event}) + "\n"
 
                 # Tool invocation completed

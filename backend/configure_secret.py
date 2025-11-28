@@ -10,7 +10,7 @@ import json
 import os
 import sys
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict
 
 def get_stack_outputs(stack_name: str, region: str) -> Dict[str, str]:
     """Retrieve CloudFormation stack outputs"""
@@ -125,7 +125,7 @@ def main():
         env_path = os.path.join(os.path.dirname(script_dir), 'agent', 'agent_config.env')
         write_minimal_env_file(config, secret_name, outputs, args.region, env_path)
         
-        print(f"\n📋 Configuration Updated:")
+        print("\n📋 Configuration Updated:")
         print(f"   - Runtime Secret: {secret_name}")
         print(f"   - Local Config: {env_path}")
         return 0

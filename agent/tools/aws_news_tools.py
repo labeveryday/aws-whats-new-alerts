@@ -7,7 +7,6 @@ from accessing arbitrary URLs on the internet.
 """
 from strands import tool
 import requests
-from typing import Any
 
 # Whitelist of allowed URLs - ONLY AWS What's New feed
 ALLOWED_URLS = [
@@ -67,4 +66,4 @@ def get_allowed_urls() -> str:
     Returns:
         List of whitelisted URLs for transparency
     """
-    return f"This agent can only access the following URLs:\n" + "\n".join(f"- {url}" for url in ALLOWED_URLS)
+    return "This agent can only access the following URLs:\n" + "\n".join(f"- {url}" for url in ALLOWED_URLS)

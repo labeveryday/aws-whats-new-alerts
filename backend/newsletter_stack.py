@@ -22,8 +22,6 @@ from aws_cdk import (
     aws_s3 as s3,
     aws_cloudfront as cloudfront,
     aws_cloudfront_origins as origins,
-    aws_lambda as _lambda,
-    aws_apigateway as apigateway,
     CfnOutput,
     Duration,
     RemovalPolicy
@@ -279,7 +277,7 @@ class NewsletterStack(Stack):
                 actions=["secretsmanager:GetSecretValue"],
                 resources=[
                     f"arn:aws:secretsmanager:{Stack.of(self).region}:{Stack.of(self).account}:secret:bedrock-agentcore-identity*",
-                    f"arn:aws:secretsmanager:*:*:secret:*"  # Broadened to avoid ARN mismatch issues
+                    "arn:aws:secretsmanager:*:*:secret:*"  # Broadened to avoid ARN mismatch issues
                 ]
             )
         )
