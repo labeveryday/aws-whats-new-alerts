@@ -2,19 +2,47 @@
 
 **Autonomous AI newsletter system** that generates and delivers daily email digests about AWS announcements, focused on **Agentic AI** (AgentCore, Strands, MCP, A2A) and AI/ML updates.
 
-Built with AWS Bedrock AgentCore, Strands Agents SDK, and CDK.
+Built with AWS Bedrock AgentCore, Strands Agents SDK, and CDK. Features a **multi-agent architecture** with an orchestrator and specialized sub-agents for enhanced link extraction.
 
 ## 🎯 Features
 
-- 🤖 **Autonomous Operation** - Self-schedules via EventBridge
+- 🤖 **Multi-Agent Architecture** - Orchestrator + sub-agent for intelligent link extraction
 - 🎯 **Agentic AI Focus** - Prioritizes AgentCore, Strands, MCP, Kiro, A2A, Claude
+- 🔗 **Enhanced Links** - Extracts documentation and GitHub links from announcements and blogs
 - 🧠 **Per-User Memory** - Remembers your name, preferences, and newsletter history
 - 📰 **Browse vs Publish** - View news without sending, or publish on demand
 - 📧 **Email Delivery** - Professional newsletters via SNS
 - 💬 **Web Chat UI** - Real-time streaming with tool visualization
 - 🔒 **Secure** - Cognito auth with JWT-based user isolation
+- 🔄 **Self-Scheduling** - Agent discovers its own ARN and creates EventBridge schedules
 
 ## 🏗️ Architecture
+
+### Multi-Agent Design
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ORCHESTRATOR AGENT                        │
+│                   (Strands + Sonnet)                         │
+│                                                              │
+│  Workflow: Fetch → Filter → Enhance → Format → Publish      │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+         ┌────────────┬────┴────┬─────────────┐
+         ▼            ▼         ▼             ▼
+   ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+   │fetch_aws_│ │extract_  │ │read_blog_│ │publish_  │
+   │  news    │ │links     │ │for_links │ │newsletter│
+   └──────────┘ └──────────┘ └────┬─────┘ └──────────┘
+      Tool         Tool           │          Tool
+                            ┌─────▼─────┐
+                            │ SUB-AGENT │
+                            │ (Sonnet)  │
+                            └───────────┘
+                            Blog analysis
+```
+
+### System Overview
 
 ```mermaid
 flowchart TB
@@ -30,9 +58,10 @@ flowchart TB
         Cognito["Cognito"]
     end
 
-    subgraph Agent["🤖 Agent Runtime"]
+    subgraph Agent["🤖 Multi-Agent Runtime"]
         Runtime["AgentCore Runtime"]
-        Strands["Strands Agent"]
+        Orchestrator["Orchestrator Agent"]
+        SubAgent["Blog Reader Sub-Agent"]
         Tools["Tools"]
     end
 
@@ -50,13 +79,14 @@ flowchart TB
     Browser -->|HTTPS| CF
     Browser -->|Auth| Cognito
     Cognito -->|JWT| Runtime
-    Runtime --> Strands
-    Strands --> Tools
-    Strands -->|Query/Save| Articles
-    Strands -->|Query/Save| Prefs
+    Runtime --> Orchestrator
+    Orchestrator --> Tools
+    Orchestrator --> SubAgent
+    Orchestrator -->|Query/Save| Articles
+    Orchestrator -->|Query/Save| Prefs
     Tools -->|Publish| SNS
     Tools -->|Schedule| Scheduler
-    Strands -->|Config| Secrets
+    Orchestrator -->|Config| Secrets
     Scheduler -->|Daily| Runtime
     SNS -->|Email| User
 ```
@@ -65,9 +95,10 @@ flowchart TB
 
 | Feature | Description |
 |---------|-------------|
+| **Multi-Agent Pattern** | Orchestrator uses sub-agent for blog analysis ("Agents as Tools") |
 | **Per-User Memory** | JWT `sub` claim isolates each user's data |
 | **Article Deduplication** | Semantic memory prevents duplicate newsletters |
-| **Newsletter History** | Tracks when newsletters were sent (with timestamps) |
+| **Enhanced Links** | Extracts docs/GitHub links from announcements and blogs |
 | **Self-Discovery** | Agent finds its own ARN for scheduling |
 | **Direct Streaming** | No API Gateway timeouts |
 
@@ -156,10 +187,15 @@ Agent recalls: "Newsletter sent on November 27, 2025 at 1:15 PM EST..."
 ```
 aws-whats-new-alerts/
 ├── agent/
-│   ├── agent.py              # Main agent
+│   ├── agent.py              # Orchestrator agent
 │   ├── memory_hooks.py       # Long-term memory integration
 │   ├── secrets_loader.py     # Config loader
-│   └── tools/                # Custom tools
+│   └── tools/
+│       ├── aws_news_tools.py   # RSS fetching
+│       ├── link_extractor.py   # Regex-based link extraction
+│       ├── blog_reader.py      # Sub-agent for blog analysis
+│       ├── sns_tools.py        # Email publishing
+│       └── create_events.py    # Scheduling + self-discovery
 ├── backend/
 │   ├── newsletter_stack.py   # CDK infrastructure
 │   ├── configure_secret.py   # Secrets setup
