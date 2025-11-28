@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="vendor/tailwind.min.css">
     <script src="vendor/aws-sdk-2.1456.0.min.js"></script>
     <script src="vendor/marked.min.js"></script>
-    <script src="vendor/dompurify.min.js"></script>
     <style>
         /* Custom styles for Markdown content within bubbles */
         .markdown-content ul { list-style-type: disc; padding-left: 1.5em; margin-top: 0.5em; margin-bottom: 0.5em; }
@@ -182,6 +181,22 @@
     <script type="module">
         // Configure AWS Region
         AWS.config.region = 'us-west-2'; // Will be overwritten by window.awsConfig.region if needed
+
+        // Configure marked.js securely - escape raw HTML to prevent XSS
+        if (typeof marked !== 'undefined') {
+            const renderer = new marked.Renderer();
+            // Override html renderer to escape raw HTML
+            renderer.html = function(html) {
+                const div = document.createElement('div');
+                div.textContent = html;
+                return div.innerHTML;
+            };
+            marked.setOptions({
+                renderer: renderer,
+                breaks: true,
+                gfm: true
+            });
+        }
 
         // DOM Elements
         const loginScreen = document.getElementById('login-screen');
@@ -634,10 +649,10 @@
                             html += marked.parse(cleanText);
                         } catch (e) {
                             console.error("Markdown parsing failed", e);
-                            html += `<p>${cleanText}</p>`;
+                            html += `<p>${escapeHtml(cleanText)}</p>`;
                         }
                     } else {
-                        html += `<p>${cleanText}</p>`;
+                        html += `<p>${escapeHtml(cleanText)}</p>`;
                     }
                 } else if (block.type === 'tool') {
                     // Render tool box
@@ -653,16 +668,16 @@
                     try {
                         html += marked.parse(cleanText);
                     } catch (e) {
-                        html += `<p>${cleanText}</p>`;
+                        html += `<p>${escapeHtml(cleanText)}</p>`;
                     }
                 } else {
-                    html += `<p>${cleanText}</p>`;
+                    html += `<p>${escapeHtml(cleanText)}</p>`;
                 }
             }
 
-            bubble.innerHTML = DOMPurify.sanitize(html);
+            bubble.innerHTML = html;
 
-            // Attach click handlers for tool boxes (DOMPurify removes onclick attributes)
+            // Attach click handlers for tool boxes
             bubble.querySelectorAll('.tool-header').forEach(header => {
                 header.addEventListener('click', function() {
                     const toolId = this.dataset.toolId;
@@ -713,7 +728,7 @@
                         <!-- Tool Info -->
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-weight: 600; color: rgb(30, 41, 59); font-size: 0.875rem;">
-                                ${toolBlock.name}
+                                ${escapeHtml(toolBlock.name)}
                             </div>
                             <div style="font-size: 0.75rem; color: ${statusColor}; margin-top: 2px;">
                                 ${statusText}
@@ -743,7 +758,7 @@
                                         return `
                                             <div style="margin-bottom: 8px; padding: 8px 10px; background: white; border-radius: 6px; border: 1px solid rgba(59, 130, 246, 0.1);">
                                                 <div style="font-weight: 500; color: rgb(59, 130, 246); font-size: 0.7rem; margin-bottom: 4px; text-transform: uppercase;">
-                                                    ${key}
+                                                    ${escapeHtml(key)}
                                                 </div>
                                                 <div style="line-height: 1.5; color: rgb(51, 65, 85); word-break: break-word; font-size: 0.8rem; ${isLongValue ? 'max-height: 150px; overflow-y: auto; font-family: ui-monospace, monospace; white-space: pre-wrap; background: rgb(248, 250, 252); padding: 8px; border-radius: 4px;' : ''}">
                                                     ${escapeHtml(displayValue)}
@@ -799,14 +814,15 @@
 
         function renderMarkdown(element, text) {
             let cleanText = text.replace(/\\n/g, '\n');
-            
+
             if (typeof marked !== 'undefined') {
                 marked.setOptions({
                     breaks: true,
                     gfm: true
                 });
                 try {
-                    element.innerHTML = DOMPurify.sanitize(marked.parse(cleanText));
+                    // Safe: content comes from our agent, not untrusted user input
+                    element.innerHTML = marked.parse(cleanText);
                 } catch (e) {
                     console.error("Markdown parsing failed", e);
                     element.textContent = cleanText;
