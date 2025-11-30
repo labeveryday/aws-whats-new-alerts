@@ -1,12 +1,12 @@
 # AWS What's New Alerts - Datadog Tracing Demo
 
-**Simplified AgentCore agent** for testing Datadog tracing integration. This is a stripped-down version without authentication or frontend - just the core agent infrastructure with AgentCore memory and tools.
+**Local development setup** for testing Datadog tracing integration. Deploys AWS infrastructure (Memory, SNS) but runs the agent **locally** for easy debugging and tracing.
 
 Built with AWS Bedrock AgentCore, Strands Agents SDK, and CDK. Features a **multi-agent architecture** with an orchestrator and specialized sub-agents for enhanced link extraction.
 
 ## Purpose
 
-This branch is designed for Datadog engineers to test tracing of Strands agents running on AgentCore. It removes Cognito authentication and frontend complexity so you can focus purely on agent tracing.
+Test Datadog tracing of Strands agents with AgentCore Memory integration. Agent runs locally on your machine while using AWS services (Memory, SNS, EventBridge).
 
 ## Features
 
@@ -71,117 +71,104 @@ This branch is designed for Datadog engineers to test tracing of Strands agents 
 
 ### Prerequisites
 - AWS Account with Bedrock AgentCore access
-- Python 3.10+: `source .venv/bin/activate`
+- Python 3.10+
 - AWS CDK: `npm install -g aws-cdk`
-- AgentCore CLI: `pip install bedrock-agentcore-cli`
+- AWS credentials configured: `aws configure`
 
-### Deployment
+### Setup (One-Time)
 
-**1. Deploy Infrastructure**
+**Deploy Infrastructure**
 ```bash
-cd backend
-cdk bootstrap  # First time only
-cdk deploy --context email=your-email@example.com
+./deploy.sh --email your-email@example.com
 ```
 
-**2. Configure Secrets**
+This creates:
+- AgentCore Memory (semantic deduplication)
+- SNS Topic (email delivery)
+- Secrets Manager (configuration)
+- IAM Roles
+
+**Confirm Email**
+Check your inbox and confirm the SNS subscription.
+
+### Run Agent Locally
+
+**Terminal 1: Start Agent**
 ```bash
-python configure_secret.py --email your-email@example.com
+cd agent
+./run.sh
 ```
 
-**3. Deploy Agent**
+>NOTE: Add your datadog env in the agent.py before running
+
+**Terminal 2: Chat with Agent**
 ```bash
-cd ../agent
-source agent_config.env
-agentcore configure -e agent.py \
-  --region $AWS_REGION \
-  --name $AGENT_NAME \
-  --execution-role $AGENTCORE_RUNTIME_ROLE_ARN
-agentcore launch --env SECRET_NAME=$SECRET_NAME --env AWS_REGION=$AWS_REGION
+python local_chat_invoke.py
 ```
 
-**4. Test the Agent**
-```bash
-python invoke_agent.py --prompt "What's new in AWS today?"
+The agent runs on `localhost:8080` and uses your AWS credentials to access Memory, SNS, and other services.
+
+## Testing
+
+### Example Prompts
+```
+You: What's new in AWS AI today?
+You: Generate and send a newsletter about AWS AI news
+You: Schedule yourself for 8 AM daily
 ```
 
-## Testing Datadog Tracing
+Type `quit`, `exit`, or `bye` to exit.
 
-The `invoke_agent.py` script provides both single-prompt and interactive chat modes with real-time streaming output.
+### What Gets Traced
 
-### Single Prompt Mode
-```bash
-# Simple query
-python invoke_agent.py --prompt "What AWS AI announcements happened today?"
-
-# Generate newsletter (sends email)
-python invoke_agent.py --prompt "Generate and send a newsletter about AWS AI news"
-
-# Self-scheduling
-python invoke_agent.py --prompt "Schedule yourself for 8 AM daily"
-```
-
-### Interactive Chat Mode
-```bash
-python invoke_agent.py
-```
-
-This opens an interactive session where you can have multi-turn conversations with the agent. Type `quit` to exit or `clear` to start a new session.
-
-### Tracing Identifiers
-
-For consistent tracing, these identifiers are fixed across all invocations:
-
-| Identifier | Value | Source |
-|------------|-------|--------|
-| Session ID | `datadog-tracing-demo-session-0001` | `invoke_agent.py` |
-| Actor ID | `aws_newsletter_bot` | Secrets Manager |
-
-The agent exercises:
-- Multi-turn conversation with tools
-- Sub-agent invocation (blog reader)
-- AgentCore Memory (semantic search + storage)
-- External API calls (RSS, blog fetching)
-- AWS service calls (SNS, EventBridge)
+- Multi-turn conversations with tool calls
+- Sub-agent invocations (blog reader)
+- AgentCore Memory operations (semantic search + storage)
+- External API calls (RSS feeds, blog fetching)
+- AWS service calls (SNS, EventBridge, Secrets Manager)
 
 ## Project Structure
 
 ```
 aws-whats-new-alerts/
 ├── agent/
-│   ├── agent.py              # Orchestrator agent
-│   ├── memory_hooks.py       # Long-term memory integration
-│   ├── secrets_loader.py     # Config loader
+│   ├── agent.py                # Orchestrator agent
+│   ├── memory_hooks.py         # Memory integration
+│   ├── secrets_loader.py       # Config loader
 │   └── tools/
 │       ├── aws_news_tools.py   # RSS fetching
-│       ├── link_extractor.py   # Regex-based link extraction
-│       ├── blog_reader.py      # Sub-agent for blog analysis
+│       ├── link_extractor.py   # Link extraction
+│       ├── blog_reader.py      # Sub-agent
 │       ├── sns_tools.py        # Email publishing
-│       └── create_events.py    # Scheduling + self-discovery
+│       └── create_events.py    # Scheduling
 ├── backend/
-│   ├── newsletter_stack.py   # CDK infrastructure
-│   └── configure_secret.py   # Secrets setup
-└── invoke_agent.py           # Invocation script
+│   ├── newsletter_stack.py     # CDK infrastructure
+│   └── configure_secret.py     # Secrets setup
+├── deploy.sh                   # One-command deployment
+└── local_chat_invoke.py        # Local testing
 ```
 
 ## Operations
 
 ### Update Agent
-```bash
-cd agent
-agentcore launch --env SECRET_NAME=$SECRET_NAME --env AWS_REGION=$AWS_REGION
-```
+Restart `./run.sh` to pick up code changes.
 
 ### View Logs
+Logs stream to the terminal running `./run.sh`.
+
+### Cleanup
 ```bash
-aws logs tail /aws/bedrock-agentcore/runtimes/ --follow
+./destroy.sh
 ```
 
-### Destroy
-```bash
-cd backend
-cdk destroy
-```
+## Memory
+
+The agent uses AgentCore Memory with:
+- **Actor ID**: `aws_newsletter_bot`
+- **Session ID**: `aws-newsletter-main-session`
+- **Namespaces**: `/newsletter/articles` (deduplication), `/newsletter/preferences` (user info)
+
+Memory persists across restarts and conversations.
 
 ## License
 

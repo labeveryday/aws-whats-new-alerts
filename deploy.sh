@@ -4,10 +4,10 @@ set -e
 # =============================================================================
 # AWS What's New Alerts - Datadog Tracing Demo Deployment
 # =============================================================================
-# Simplified deployment script (no frontend, no Cognito):
+# Simplified deployment script (no frontend, no Cognito, no AgentCore):
 #   1. CDK Infrastructure (SNS, Memory, IAM Roles)
 #   2. Agent Configuration (Secrets Manager)
-#   3. Agent Runtime (AgentCore)
+#   3. Local agent testing with local_chat_invoke.py
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,7 +54,6 @@ PREREQUISITES:
     - AWS CLI configured with appropriate credentials
     - AWS CDK CLI installed (npm install -g aws-cdk)
     - Python 3.10+ with virtual environment
-    - agentcore CLI installed (pip install bedrock-agentcore-cli)
 
 EOF
     exit 0
@@ -117,10 +116,6 @@ check_prerequisites() {
         missing+=("Python 3")
     fi
 
-    if ! command -v agentcore &> /dev/null; then
-        missing+=("agentcore CLI (pip install bedrock-agentcore-cli)")
-    fi
-
     if [ ${#missing[@]} -ne 0 ]; then
         print_error "Missing prerequisites:"
         for item in "${missing[@]}"; do
@@ -181,32 +176,33 @@ configure_secrets() {
     echo "Secrets configured successfully."
 }
 
-# Step 3: Deploy Agent
-deploy_agent() {
-    print_step "Step 3/3: Deploying Agent..."
+# Step 3: Setup Local Testing
+setup_local_testing() {
+    print_step "Step 3/3: Setting up local testing..."
 
     cd "$SCRIPT_DIR/agent"
 
-    # Source the generated config
-    if [ -f "agent_config.env" ]; then
-        source agent_config.env
-    else
+    if [ ! -f "agent_config.env" ]; then
         print_error "agent_config.env not found. Run configure_secret.py first."
         exit 1
     fi
 
-    # Configure the agent (no JWT auth needed for this demo)
-    echo "Configuring agent..."
-    agentcore configure -e agent.py \
-        --region "$REGION" \
-        --name "$AGENT_NAME" \
-        --execution-role "$AGENTCORE_RUNTIME_ROLE_ARN"
+    # Source config to get SECRET_NAME and AWS_REGION
+    source agent_config.env
 
-    # Launch the agent
-    echo "Launching agent..."
-    agentcore launch --env SECRET_NAME="$SECRET_NAME" --env AWS_REGION="$REGION"
+    # Create run script
+    cat > run.sh << EOF
+#!/bin/bash
+# Auto-generated run script
+source agent_config.env
+export SECRET_NAME
+export AWS_REGION
+python agent.py
+EOF
+    chmod +x run.sh
 
-    echo "Agent deployed successfully."
+    echo "Local testing environment ready."
+    echo "Agent will run locally - no AgentCore deployment."
 }
 
 # Main execution
@@ -224,7 +220,7 @@ main() {
 
     deploy_infrastructure
     configure_secrets
-    deploy_agent
+    setup_local_testing
 
     echo ""
     echo "=============================================="
@@ -233,8 +229,11 @@ main() {
     echo ""
     echo "Next steps:"
     echo "  1. Check your email ($EMAIL) to confirm SNS subscription"
-    echo "  2. Test the agent:"
-    echo "     python invoke_agent.py --prompt \"What's new in AWS today?\""
+    echo "  2. Run the agent locally:"
+    echo "     cd agent"
+    echo "     ./run.sh"
+    echo "  3. In another terminal, test with:"
+    echo "     python local_chat_invoke.py"
     echo ""
 }
 

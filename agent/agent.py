@@ -9,6 +9,7 @@ import logging
 import uuid
 import base64
 from typing import Optional
+import argparse
 
 # Add current directory to path
 sys.path.append(os.path.dirname(__file__))
@@ -469,4 +470,7 @@ async def invoke_agent(payload, context):
         yield json.dumps({"error": f"Agent execution failed: {error_msg}"}) + "\n"
 
 if __name__ == "__main__":
-    app.run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=8080)
+    args = parser.parse_args()
+    app.run(port=args.port)

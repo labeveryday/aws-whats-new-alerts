@@ -4,9 +4,11 @@ set -e
 # =============================================================================
 # AWS What's New Alerts - Datadog Tracing Demo - Destroy Script
 # =============================================================================
-# This script destroys the complete stack in reverse order:
-#   1. Agent Runtime (AgentCore)
-#   2. CDK Infrastructure (SNS, Memory, IAM Roles)
+# This script destroys the CDK infrastructure:
+#   - AgentCore Memory
+#   - SNS Topic
+#   - Secrets Manager
+#   - IAM Roles
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,7 +38,7 @@ usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
 
-Destroy the AWS What's New Alerts system (Datadog Tracing Demo).
+Destroy the AWS What's New Alerts infrastructure (Datadog Tracing Demo).
 
 OPTIONS:
     -r, --region REGION     AWS region (default: us-west-2)
@@ -86,26 +88,9 @@ activate_venv() {
     fi
 }
 
-# Step 1: Destroy Agent
-destroy_agent() {
-    print_step "Step 1/2: Destroying Agent..."
-
-    cd "$SCRIPT_DIR/agent"
-
-    # Check if agent is configured
-    if [ -f ".bedrock_agentcore.yaml" ]; then
-        echo "Destroying agent runtime..."
-        agentcore destroy --force || print_warning "Agent destroy failed (may not exist)"
-    else
-        print_warning "No agent configuration found. Skipping agent destroy."
-    fi
-
-    echo "Agent destroyed."
-}
-
-# Step 2: Destroy CDK Infrastructure
+# Step 1: Destroy CDK Infrastructure
 destroy_infrastructure() {
-    print_step "Step 2/2: Destroying CDK Infrastructure..."
+    print_step "Step 1/1: Destroying CDK Infrastructure..."
 
     cd "$SCRIPT_DIR/backend"
 
@@ -132,7 +117,6 @@ main() {
     if [ -z "$SKIP_CONFIRM" ]; then
         echo ""
         echo -e "${RED}WARNING: This will permanently delete all resources!${NC}"
-        echo "  - AgentCore Runtime"
         echo "  - AgentCore Memory"
         echo "  - SNS Topic and Subscriptions"
         echo "  - Secrets Manager Secret"
@@ -148,7 +132,6 @@ main() {
 
     activate_venv
 
-    destroy_agent
     destroy_infrastructure
 
     echo ""
