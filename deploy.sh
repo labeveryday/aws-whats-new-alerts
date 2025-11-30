@@ -2,13 +2,12 @@
 set -e
 
 # =============================================================================
-# AWS What's New Alerts - Full Deployment Script
+# AWS What's New Alerts - Datadog Tracing Demo Deployment
 # =============================================================================
-# This script deploys the complete stack:
-#   1. CDK Infrastructure (SNS, Memory, Cognito, S3, CloudFront)
+# Simplified deployment script (no frontend, no Cognito):
+#   1. CDK Infrastructure (SNS, Memory, IAM Roles)
 #   2. Agent Configuration (Secrets Manager)
 #   3. Agent Runtime (AgentCore)
-#   4. Frontend (S3 + CloudFront)
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,7 +37,7 @@ usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
 
-Deploy the AWS What's New Alerts system.
+Deploy the AWS What's New Alerts system (Datadog Tracing Demo).
 
 OPTIONS:
     -e, --email EMAIL       Email address for newsletter subscription (required)
@@ -156,7 +155,7 @@ activate_venv() {
 
 # Step 1: Deploy CDK Infrastructure
 deploy_infrastructure() {
-    print_step "Step 1/4: Deploying CDK Infrastructure..."
+    print_step "Step 1/3: Deploying CDK Infrastructure..."
 
     cd "$SCRIPT_DIR/backend"
 
@@ -174,7 +173,7 @@ deploy_infrastructure() {
 
 # Step 2: Configure Secrets
 configure_secrets() {
-    print_step "Step 2/4: Configuring Secrets..."
+    print_step "Step 2/3: Configuring Secrets..."
 
     cd "$SCRIPT_DIR/backend"
     python configure_secret.py --stack-name "$STACK_NAME" --region "$REGION" --email "$EMAIL"
@@ -184,7 +183,7 @@ configure_secrets() {
 
 # Step 3: Deploy Agent
 deploy_agent() {
-    print_step "Step 3/4: Deploying Agent..."
+    print_step "Step 3/3: Deploying Agent..."
 
     cd "$SCRIPT_DIR/agent"
 
@@ -196,24 +195,12 @@ deploy_agent() {
         exit 1
     fi
 
-    # Configure the agent with JWT authorization for per-user memory isolation
-    # The AUTHORIZER_CONFIG enables AgentCore to validate Cognito JWTs
-    # and pass the user identity (sub claim) to the agent via headers
-    echo "Configuring agent with JWT authorization..."
-    if [ -n "$AUTHORIZER_CONFIG" ]; then
-        agentcore configure -e agent.py \
-            --region "$REGION" \
-            --name "$AGENT_NAME" \
-            --execution-role "$AGENTCORE_RUNTIME_ROLE_ARN" \
-            --authorizer-config "$AUTHORIZER_CONFIG" \
-            --request-header-allowlist "Authorization"
-    else
-        echo "Warning: AUTHORIZER_CONFIG not set. Deploying without JWT auth."
-        agentcore configure -e agent.py \
-            --region "$REGION" \
-            --name "$AGENT_NAME" \
-            --execution-role "$AGENTCORE_RUNTIME_ROLE_ARN"
-    fi
+    # Configure the agent (no JWT auth needed for this demo)
+    echo "Configuring agent..."
+    agentcore configure -e agent.py \
+        --region "$REGION" \
+        --name "$AGENT_NAME" \
+        --execution-role "$AGENTCORE_RUNTIME_ROLE_ARN"
 
     # Launch the agent
     echo "Launching agent..."
@@ -222,20 +209,10 @@ deploy_agent() {
     echo "Agent deployed successfully."
 }
 
-# Step 4: Deploy Frontend
-deploy_frontend() {
-    print_step "Step 4/4: Deploying Frontend..."
-
-    cd "$SCRIPT_DIR/backend"
-    python deploy_frontend.py
-
-    echo "Frontend deployed successfully."
-}
-
 # Main execution
 main() {
     echo "=============================================="
-    echo "  AWS What's New Alerts - Full Deployment"
+    echo "  AWS What's New Alerts - Datadog Demo"
     echo "=============================================="
     echo "Email:      $EMAIL"
     echo "Region:     $REGION"
@@ -248,7 +225,6 @@ main() {
     deploy_infrastructure
     configure_secrets
     deploy_agent
-    deploy_frontend
 
     echo ""
     echo "=============================================="
@@ -257,8 +233,8 @@ main() {
     echo ""
     echo "Next steps:"
     echo "  1. Check your email ($EMAIL) to confirm SNS subscription"
-    echo "  2. Visit the CloudFront URL printed above to access the Chat UI"
-    echo "  3. Ask the agent to 'Set up daily newsletter delivery at 8 AM'"
+    echo "  2. Test the agent:"
+    echo "     python invoke_agent.py --prompt \"What's new in AWS today?\""
     echo ""
 }
 

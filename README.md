@@ -1,22 +1,23 @@
-# AWS What's New Alerts
+# AWS What's New Alerts - Datadog Tracing Demo
 
-**Autonomous AI newsletter system** that generates and delivers daily email digests about AWS announcements, focused on **Agentic AI** (AgentCore, Strands, MCP, A2A) and AI/ML updates.
+**Simplified AgentCore agent** for testing Datadog tracing integration. This is a stripped-down version without authentication or frontend - just the core agent infrastructure with AgentCore memory and tools.
 
 Built with AWS Bedrock AgentCore, Strands Agents SDK, and CDK. Features a **multi-agent architecture** with an orchestrator and specialized sub-agents for enhanced link extraction.
 
-## 🎯 Features
+## Purpose
 
-- 🤖 **Multi-Agent Architecture** - Orchestrator + sub-agent for intelligent link extraction
-- 🎯 **Agentic AI Focus** - Prioritizes AgentCore, Strands, MCP, Kiro, A2A, Claude
-- 🔗 **Enhanced Links** - Extracts documentation and GitHub links from announcements and blogs
-- 🧠 **Per-User Memory** - Remembers your name, preferences, and newsletter history
-- 📰 **Browse vs Publish** - View news without sending, or publish on demand
-- 📧 **Email Delivery** - Professional newsletters via SNS
-- 💬 **Web Chat UI** - Real-time streaming with tool visualization
-- 🔒 **Secure** - Cognito auth with JWT-based user isolation
-- 🔄 **Self-Scheduling** - Agent discovers its own ARN and creates EventBridge schedules
+This branch is designed for Datadog engineers to test tracing of Strands agents running on AgentCore. It removes Cognito authentication and frontend complexity so you can focus purely on agent tracing.
 
-## 🏗️ Architecture
+## Features
+
+- Multi-Agent Architecture - Orchestrator + sub-agent for intelligent link extraction
+- Agentic AI Focus - Prioritizes AgentCore, Strands, MCP, Kiro, A2A, Claude
+- Enhanced Links - Extracts documentation and GitHub links from announcements and blogs
+- AgentCore Memory - Semantic deduplication of articles
+- Email Delivery - Professional newsletters via SNS
+- Self-Scheduling - Agent discovers its own ARN and creates EventBridge schedules
+
+## Architecture
 
 ### Multi-Agent Design
 
@@ -42,67 +43,31 @@ Built with AWS Bedrock AgentCore, Strands Agents SDK, and CDK. Features a **mult
                             Blog analysis
 ```
 
-### System Overview
+### System Overview (Simplified)
 
-```mermaid
-flowchart TB
-    subgraph User["👤 User"]
-        Browser["Web Browser"]
-    end
-
-    subgraph Frontend["🌐 Frontend"]
-        CF["CloudFront"] --> S3["S3"]
-    end
-
-    subgraph Auth["🔐 Auth"]
-        Cognito["Cognito"]
-    end
-
-    subgraph Agent["🤖 Multi-Agent Runtime"]
-        Runtime["AgentCore Runtime"]
-        Orchestrator["Orchestrator Agent"]
-        SubAgent["Blog Reader Sub-Agent"]
-        Tools["Tools"]
-    end
-
-    subgraph Memory["🧠 Memory"]
-        Articles["Article Dedup<br/>/newsletter/articles"]
-        Prefs["User Prefs<br/>/newsletter/preferences"]
-    end
-
-    subgraph Services["📦 Services"]
-        SNS["SNS"]
-        Scheduler["EventBridge"]
-        Secrets["Secrets Manager"]
-    end
-
-    Browser -->|HTTPS| CF
-    Browser -->|Auth| Cognito
-    Cognito -->|JWT| Runtime
-    Runtime --> Orchestrator
-    Orchestrator --> Tools
-    Orchestrator --> SubAgent
-    Orchestrator -->|Query/Save| Articles
-    Orchestrator -->|Query/Save| Prefs
-    Tools -->|Publish| SNS
-    Tools -->|Schedule| Scheduler
-    Orchestrator -->|Config| Secrets
-    Scheduler -->|Daily| Runtime
-    SNS -->|Email| User
+```
+┌─────────────────────────────────────────────────────┐
+│                 Agent Runtime                        │
+│  ┌────────────────────────────────────────────────┐ │
+│  │           AgentCore Runtime                     │ │
+│  │  ┌────────────┐  ┌────────────┐                │ │
+│  │  │Orchestrator│  │ Sub-Agent  │                │ │
+│  │  │   Agent    │──│(Blog Reader)│               │ │
+│  │  └─────┬──────┘  └────────────┘                │ │
+│  │        │                                        │ │
+│  │  ┌─────▼──────┐                                │ │
+│  │  │   Tools    │                                │ │
+│  │  └────────────┘                                │ │
+│  └────────────────────────────────────────────────┘ │
+└─────────┬─────────────────────────────────────────┬─┘
+          │                                         │
+    ┌─────▼─────┐                            ┌─────▼─────┐
+    │  Memory   │                            │    SNS    │
+    │(AgentCore)│                            │  (Email)  │
+    └───────────┘                            └───────────┘
 ```
 
-### Key Highlights
-
-| Feature | Description |
-|---------|-------------|
-| **Multi-Agent Pattern** | Orchestrator uses sub-agent for blog analysis ("Agents as Tools") |
-| **Per-User Memory** | JWT `sub` claim isolates each user's data |
-| **Article Deduplication** | Semantic memory prevents duplicate newsletters |
-| **Enhanced Links** | Extracts docs/GitHub links from announcements and blogs |
-| **Self-Discovery** | Agent finds its own ARN for scheduling |
-| **Direct Streaming** | No API Gateway timeouts |
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - AWS Account with Bedrock AgentCore access
@@ -110,12 +75,7 @@ flowchart TB
 - AWS CDK: `npm install -g aws-cdk`
 - AgentCore CLI: `pip install bedrock-agentcore-cli`
 
-### One-Command Deployment
-```bash
-./deploy.sh --email your-email@example.com
-```
-
-### Manual Deployment
+### Deployment
 
 **1. Deploy Infrastructure**
 ```bash
@@ -140,49 +100,51 @@ agentcore configure -e agent.py \
 agentcore launch --env SECRET_NAME=$SECRET_NAME --env AWS_REGION=$AWS_REGION
 ```
 
-**4. Deploy Frontend**
+**4. Test the Agent**
 ```bash
-cd ../backend
-python deploy_frontend.py
+python invoke_agent.py --prompt "What's new in AWS today?"
 ```
 
-**5. Self-Schedule** (via Chat UI)
-> "Schedule yourself for 6am EST daily"
+## Testing Datadog Tracing
 
-## 💬 Usage Modes
+The `invoke_agent.py` script provides both single-prompt and interactive chat modes with real-time streaming output.
 
-### Browse Mode
-Ask about news without sending email:
-> "What's new in AWS today?"
+### Single Prompt Mode
+```bash
+# Simple query
+python invoke_agent.py --prompt "What AWS AI announcements happened today?"
 
-Agent shows summary and asks if you want to publish.
+# Generate newsletter (sends email)
+python invoke_agent.py --prompt "Generate and send a newsletter about AWS AI news"
 
-### Publish Mode
-Explicitly request newsletter:
-> "Send me a newsletter"
+# Self-scheduling
+python invoke_agent.py --prompt "Schedule yourself for 8 AM daily"
+```
 
-Agent generates, sends email, and confirms with timestamp.
+### Interactive Chat Mode
+```bash
+python invoke_agent.py
+```
 
-### Memory Recall
-Ask about past activity:
-> "What's the most recent newsletter you sent me?"
+This opens an interactive session where you can have multi-turn conversations with the agent. Type `quit` to exit or `clear` to start a new session.
 
-Agent recalls: "Newsletter sent on November 27, 2025 at 1:15 PM EST..."
+### Tracing Identifiers
 
-## 🧠 Memory System
+For consistent tracing, these identifiers are fixed across all invocations:
 
-| Namespace | Purpose |
-|-----------|---------|
-| `/newsletter/articles/{userId}` | Article URLs for deduplication |
-| `/newsletter/preferences/{userId}` | User name, preferences, newsletter history |
+| Identifier | Value | Source |
+|------------|-------|--------|
+| Session ID | `datadog-tracing-demo-session-0001` | `invoke_agent.py` |
+| Actor ID | `aws_newsletter_bot` | Secrets Manager |
 
-**How it works:**
-1. `LongTermMemoryHookProvider` retrieves context before each query
-2. Agent processes request with full context
-3. Hook saves conversation to memory after response
-4. 30-day TTL auto-cleans old data
+The agent exercises:
+- Multi-turn conversation with tools
+- Sub-agent invocation (blog reader)
+- AgentCore Memory (semantic search + storage)
+- External API calls (RSS, blog fetching)
+- AWS service calls (SNS, EventBridge)
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 aws-whats-new-alerts/
@@ -198,33 +160,11 @@ aws-whats-new-alerts/
 │       └── create_events.py    # Scheduling + self-discovery
 ├── backend/
 │   ├── newsletter_stack.py   # CDK infrastructure
-│   ├── configure_secret.py   # Secrets setup
-│   └── deploy_frontend.py    # Frontend deployment
-├── frontend/
-│   ├── index.html            # Chat UI
-│   └── vendor/               # Vendored dependencies
-└── deploy.sh                 # One-command deploy
+│   └── configure_secret.py   # Secrets setup
+└── invoke_agent.py           # Invocation script
 ```
 
-## 🔧 Configuration
-
-### Content Focus
-- **Default**: Agentic AI (AgentCore, Strands, MCP, A2A, Claude) + AI/ML
-- **Override**: Say "all announcements" for broader coverage
-
-### Time Frames
-- `"last 24 hours"` (default)
-- `"yesterday"` / `"last 3 days"` / `"last week"`
-
-## 🔒 Security
-
-- **Cognito**: Email/password with verification
-- **JWT Validation**: AgentCore validates tokens
-- **Per-User Isolation**: Memory scoped by user ID
-- **Least Privilege**: IAM roles scoped to account/region
-- **No API Gateway**: Direct streaming reduces attack surface
-
-## 🛠️ Operations
+## Operations
 
 ### Update Agent
 ```bash
@@ -239,9 +179,10 @@ aws logs tail /aws/bedrock-agentcore/runtimes/ --follow
 
 ### Destroy
 ```bash
-./destroy.sh
+cd backend
+cdk destroy
 ```
 
-## 📄 License
+## License
 
-© 2025 Amazon Web Services, Inc.
+2025 Amazon Web Services, Inc.

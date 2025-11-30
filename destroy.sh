@@ -2,11 +2,11 @@
 set -e
 
 # =============================================================================
-# AWS What's New Alerts - Full Destroy Script
+# AWS What's New Alerts - Datadog Tracing Demo - Destroy Script
 # =============================================================================
 # This script destroys the complete stack in reverse order:
 #   1. Agent Runtime (AgentCore)
-#   2. CDK Infrastructure (SNS, Memory, Cognito, S3, CloudFront)
+#   2. CDK Infrastructure (SNS, Memory, IAM Roles)
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,7 +36,7 @@ usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
 
-Destroy the AWS What's New Alerts system.
+Destroy the AWS What's New Alerts system (Datadog Tracing Demo).
 
 OPTIONS:
     -r, --region REGION     AWS region (default: us-west-2)
@@ -123,7 +123,7 @@ destroy_infrastructure() {
 # Main execution
 main() {
     echo "=============================================="
-    echo "  AWS What's New Alerts - Full Destroy"
+    echo "  AWS What's New Alerts - Destroy"
     echo "=============================================="
     echo "Region:     $REGION"
     echo "Stack:      $STACK_NAME"
@@ -133,11 +133,8 @@ main() {
         echo ""
         echo -e "${RED}WARNING: This will permanently delete all resources!${NC}"
         echo "  - AgentCore Runtime"
-        echo "  - SNS Topic and Subscriptions"
         echo "  - AgentCore Memory"
-        echo "  - Cognito User/Identity Pools"
-        echo "  - S3 Bucket (frontend)"
-        echo "  - CloudFront Distribution"
+        echo "  - SNS Topic and Subscriptions"
         echo "  - Secrets Manager Secret"
         echo "  - IAM Roles"
         echo ""

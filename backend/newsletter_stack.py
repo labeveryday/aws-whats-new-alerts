@@ -1,5 +1,8 @@
 """
-CDK Stack for AWS Newsletter System
+CDK Stack for AWS Newsletter System (Datadog Tracing Demo)
+
+Simplified stack for testing Datadog tracing with AgentCore agents.
+No authentication or frontend - just the core agent infrastructure.
 
 This stack creates:
 1. SNS topic for email newsletters
@@ -18,10 +21,6 @@ from aws_cdk import (
     aws_secretsmanager as secretsmanager,
     aws_sns_subscriptions as sns_subs,
     aws_scheduler as scheduler,
-    aws_cognito as cognito,
-    aws_s3 as s3,
-    aws_cloudfront as cloudfront,
-    aws_cloudfront_origins as origins,
     CfnOutput,
     Duration,
     RemovalPolicy
@@ -76,9 +75,6 @@ class NewsletterStack(Stack):
         # Subscribe test email if provided
         if test_email:
             self._subscribe_test_email(test_email)
-
-        # Create Frontend Resources (Cognito + S3 + CloudFront)
-        self._create_frontend_resources()
 
         # Create outputs
         self._create_outputs()
@@ -443,9 +439,8 @@ class NewsletterStack(Stack):
     def _subscribe_test_email(self, email: str):
         """Subscribe a test email to the newsletter"""
         self.newsletter_topic.add_subscription(
-            sns_subs.EmailSubscription(email)  # ✅ Uses correct import
+            sns_subs.EmailSubscription(email)
         )
-
 
         # Output subscription info
         CfnOutput(
@@ -454,142 +449,6 @@ class NewsletterStack(Stack):
             value=email,
             description="Test email subscribed to newsletter (requires confirmation)"
         )
-
-    def _create_frontend_resources(self):
-        """Create Cognito and Hosting resources for Chat UI"""
-        
-        # 1. Cognito User Pool
-        user_pool = cognito.UserPool(
-            self,
-            "ChatUserPool",
-            user_pool_name=f"{self._stack_name}-user-pool",
-            self_sign_up_enabled=True,
-            auto_verify={
-                "email": True
-            },
-            password_policy=cognito.PasswordPolicy(
-                min_length=8,
-                require_lowercase=True,
-                require_digits=True
-            ),
-            removal_policy=RemovalPolicy.DESTROY
-        )
-
-        # User Pool Client
-        user_pool_client = user_pool.add_client(
-            "ChatUserClient",
-            user_pool_client_name=f"{self._stack_name}-client",
-            generate_secret=False, # Web apps can't handle secrets
-            auth_flows=cognito.AuthFlow(
-                user_srp=True,
-                user_password=True
-            )
-        )
-
-        # 2. Identity Pool
-        identity_pool = cognito.CfnIdentityPool(
-            self,
-            "ChatIdentityPool",
-            identity_pool_name=f"{self._stack_name}-identity-pool",
-            allow_unauthenticated_identities=False,
-            cognito_identity_providers=[
-                cognito.CfnIdentityPool.CognitoIdentityProviderProperty(
-                    client_id=user_pool_client.user_pool_client_id,
-                    provider_name=user_pool.user_pool_provider_name
-                )
-            ]
-        )
-
-        # 3. Authenticated Role
-        authenticated_role = iam.Role(
-            self,
-            "ChatAuthenticatedRole",
-            assumed_by=iam.FederatedPrincipal(
-                "cognito-identity.amazonaws.com",
-                {
-                    "StringEquals": {
-                        "cognito-identity.amazonaws.com:aud": identity_pool.ref
-                    },
-                    "ForAnyValue:StringLike": {
-                        "cognito-identity.amazonaws.com:amr": "authenticated"
-                    }
-                },
-                "sts:AssumeRoleWithWebIdentity"
-            )
-        )
-
-        # Allow invoking AgentCore Runtime
-        #
-        # Security Design Decision:
-        # We scope permissions to runtime/* within this specific account and region.
-        # This is a best practice for single-agent deployments because:
-        #   1. Prevents cross-account access (account ID boundary)
-        #   2. Prevents cross-region access (region boundary)
-        #   3. Only allows InvokeAgentRuntime action (no create/delete/update)
-        #   4. Requires Cognito authentication (defense in depth)
-        #   5. Avoids circular dependency (agent needs role ARN, role needs agent ARN)
-        #
-        # For multi-agent or multi-tenant deployments, pass --context agentcore_arn=<ARN>
-        # to scope permissions to a specific agent runtime.
-        agent_resource = self.agentcore_arn if self.agentcore_arn else f"arn:aws:bedrock-agentcore:{Stack.of(self).region}:{Stack.of(self).account}:runtime/*"
-
-        authenticated_role.add_to_policy(
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["bedrock-agentcore:InvokeAgentRuntime"],
-                resources=[agent_resource]
-            )
-        )
-
-        # Attach Role to Identity Pool
-        cognito.CfnIdentityPoolRoleAttachment(
-            self,
-            "ChatIdentityPoolRoleAttachment",
-            identity_pool_id=identity_pool.ref,
-            roles={
-                "authenticated": authenticated_role.role_arn
-            }
-        )
-
-        # 4. S3 Bucket for Frontend
-        frontend_bucket = s3.Bucket(
-            self,
-            "ChatFrontendBucket",
-            bucket_name=f"{self._stack_name}-frontend-{Stack.of(self).account}",
-            # website_index_document="index.html", # Removed to keep bucket private
-            public_read_access=False,
-            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-            removal_policy=RemovalPolicy.DESTROY,
-            auto_delete_objects=True
-        )
-
-        # Create Origin Access Identity (OAI)
-        origin_access_identity = cloudfront.OriginAccessIdentity(
-            self, "OriginAccessIdentity",
-            comment=f"OAI for {self._stack_name}"
-        )
-
-        # Grant read permission to OAI
-        frontend_bucket.grant_read(origin_access_identity)
-
-        # 5. CloudFront Distribution
-        distribution = cloudfront.Distribution(
-            self,
-            "ChatDistribution",
-            default_behavior=cloudfront.BehaviorOptions(
-                origin=origins.S3Origin(frontend_bucket, origin_access_identity=origin_access_identity),
-                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-            ),
-            default_root_object="index.html",
-            comment=f"Frontend for {self._stack_name}"
-        )
-
-        # Store resources for outputs
-        self.user_pool = user_pool
-        self.user_pool_client = user_pool_client
-        self.identity_pool = identity_pool
-        self.frontend_bucket = frontend_bucket
-        self.distribution = distribution
 
     def _create_outputs(self):
         """Create CloudFormation outputs"""
@@ -658,52 +517,3 @@ class NewsletterStack(Stack):
                 description="Name of the EventBridge Schedule",
                 export_name=f"{self._stack_name}-schedule-name"
             )
-
-        # Frontend Outputs
-        CfnOutput(
-            self,
-            "UserPoolId",
-            value=self.user_pool.user_pool_id,
-            description="Cognito User Pool ID",
-            export_name=f"{self._stack_name}-user-pool-id"
-        )
-
-        CfnOutput(
-            self,
-            "UserPoolClientId",
-            value=self.user_pool_client.user_pool_client_id,
-            description="Cognito User Pool Client ID",
-            export_name=f"{self._stack_name}-user-pool-client-id"
-        )
-
-        CfnOutput(
-            self,
-            "IdentityPoolId",
-            value=self.identity_pool.ref,
-            description="Cognito Identity Pool ID",
-            export_name=f"{self._stack_name}-identity-pool-id"
-        )
-
-        CfnOutput(
-            self,
-            "FrontendBucketName",
-            value=self.frontend_bucket.bucket_name,
-            description="S3 Bucket for Frontend Hosting",
-            export_name=f"{self._stack_name}-frontend-bucket-name"
-        )
-
-        CfnOutput(
-            self,
-            "CloudFrontUrl",
-            value=f"https://{self.distribution.distribution_domain_name}",
-            description="CloudFront URL for Chat UI",
-            export_name=f"{self._stack_name}-cloudfront-url"
-        )
-
-        CfnOutput(
-            self,
-            "CloudFrontDistributionId",
-            value=self.distribution.distribution_id,
-            description="CloudFront Distribution ID",
-            export_name=f"{self._stack_name}-cloudfront-distribution-id"
-        )
